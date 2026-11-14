@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-11-13T19:58:29.601Z",
+        "reason": "The product brief fixes the family: Plus Jakarta Sans, bundled locally, across the whole UI (DESIGN.md §3)."
+      }
+    ]
+  }
+}

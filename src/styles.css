@@ -1,0 +1,297 @@
+@import "./design/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /*
+   * The page itself is transparent: the video is a native layer beneath the
+   * web view, and each screen paints its own background.
+   */
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+    color: var(--ink-1);
+    font-family: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    font-weight: var(--weight-body);
+    font-kerning: normal;
+    /* Plus Jakarta Sans has a 0.17em word space; this brings it to a normal 0.24em. */
+    word-spacing: 0.07em;
+    /*
+     * No "fi" ligature: browsers drop it wherever tracking is set, so the same
+     * word would be drawn two ways in body and in captions.
+     */
+    font-variant-ligatures: no-common-ligatures;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    cursor: default;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Text is selectable only where a Mac user would expect it to be. */
+  input,
+  textarea,
+  [contenteditable="true"],
+  .selectable {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: var(--line);
+  }
+
+  /*
+   * One focus ring for every interactive element, for keyboard focus only
+   * (DESIGN.md §8). "Keyboard focus" is what src/lib/focus-origin.ts recorded
+   * when focus moved, not the engine's :focus-visible guess, which differs
+   * between engines and is missing from WebKit on macOS 12.0 to 12.2.
+   *
+   * :where() keeps both rules at the weight of one pseudo-class, so an
+   * outline utility on a component can still adjust the ring.
+   */
+  :focus {
+    outline: none;
+  }
+
+  /* Something you type into shows the ring however it was focused. */
+  :where([data-focus-origin="keyboard"]) :focus,
+  :where(
+    textarea,
+    [contenteditable="true"],
+    input:not(
+      [type="button"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="submit"],
+      [type="reset"]
+    )
+  ):focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /*
+   * The timeline is as wide as the window, and a ring that wide is the
+   * loudest thing on the stage. With keyboard focus the ring goes on its
+   * needle instead, offset further out because the needle is so thin.
+   */
+  :where([data-focus-origin="keyboard"]) .ring-on-needle:focus {
+    outline: none;
+  }
+
+  :where([data-focus-origin="keyboard"]) .ring-on-needle:focus [data-needle] {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  /*
+   * The same for other controls a ring should not go all the way round: a
+   * list is as tall as its panel, and a tile's caption sits just where a
+   * ring around the whole tile would run. Each hands its ring to the part
+   * marked to carry it: the selected row, the thumbnail.
+   */
+  :where([data-focus-origin="keyboard"]) .ring-on-part:focus {
+    outline: none;
+  }
+
+  :where([data-focus-origin="keyboard"]) .ring-on-part:focus [data-ring] {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* A row's ring is drawn inside it, where the rows beside it and the list's edge cannot hide it. */
+  :where([data-focus-origin="keyboard"]) .ring-on-part:focus [data-ring="inside"] {
+    outline-offset: -2px;
+  }
+
+  /*
+   * The stage sets its own text colour and weight: both are computed on
+   * <body> and would otherwise be inherited from a light window.
+   */
+  .stage {
+    color: var(--ink-1);
+    font-weight: var(--weight-body);
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink-1);
+  }
+
+  /*
+   * Written for the elements, not as a bare ::placeholder: Tailwind's reset
+   * colours "input::placeholder" with an untinted grey of its own, which a
+   * less specific rule would lose to (2.4:1 on a light field).
+   */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-3);
+    opacity: 1;
+  }
+
+  img,
+  svg,
+  canvas {
+    -webkit-user-drag: none;
+  }
+
+  /* lucide icons, at the weight the design system uses (DESIGN.md §6). */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+}
+
+/*
+ * A menu on its way out is finished with (DESIGN.md §7). Nothing in it
+ * follows the pointer any more or can be chosen again: the second click of a
+ * double-click lands on the menu's surface, which is still there to take it,
+ * and does nothing. See also `noKeysForAClosingMenu` in menu.tsx.
+ */
+[role="menu"][data-state="closed"] * {
+  pointer-events: none;
+}
+
+/*
+ * Toasts are Sonner's; how they move and how wide they are is ours
+ * (DESIGN.md §5, §7). Its own stylesheet has them move over 400 ms on the
+ * default curve, animates the height of a stack, and below 600 px stretches
+ * a toast from one edge of the window to the other. The selectors name the
+ * elements so that they outweigh Sonner's, whichever stylesheet comes first.
+ */
+ol[data-sonner-toaster] li[data-sonner-toast] {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+ol[data-sonner-toaster] li[data-sonner-toast][data-removed="true"] {
+  transition-duration: var(--dur-fast);
+}
+
+ol[data-sonner-toaster] li[data-sonner-toast] > * {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+@media (max-width: 600px) {
+  ol[data-sonner-toaster] {
+    left: auto;
+    right: var(--mobile-offset-right);
+    width: var(--width);
+  }
+
+  ol[data-sonner-toaster] li[data-sonner-toast] {
+    left: auto;
+    right: 0;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A working indicator stays visible but does not travel. */
+  .animate-sweep {
+    animation: none;
+    transform: translateX(calc(var(--sweep, 18px) / 2));
+  }
+}
+
+@layer utilities {
+  /* Numbers that change or align (DESIGN.md §3). */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Short uppercase group labels only. */
+  .label {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /*
+   * For what is shown over the picture with no scrim behind it: the
+   * on-screen display (DESIGN.md §2). Letters are outlined in void, with the
+   * stroke painted beneath the fill so their shapes do not change; shapes
+   * draw their own outline and take only the shadow.
+   */
+  .outlined-text {
+    -webkit-text-stroke: var(--osd-outline) var(--void);
+    paint-order: stroke fill;
+    stroke-linejoin: round;
+    text-shadow: var(--osd-shadow);
+  }
+
+  .outlined-shape {
+    filter: var(--osd-shadow-shape);
+  }
+
+  /*
+   * While the picture is HDR its highlights can be several times brighter
+   * than the interface's white, and no scrim of ours can hold them back. The
+   * chrome's letters and icons then take the on-screen display's outline, so
+   * they keep an edge of void against any highlight (DESIGN.md §2).
+   */
+  :root[data-hdr] [data-stage-chrome] {
+    -webkit-text-stroke: var(--osd-outline) var(--void);
+    paint-order: stroke fill;
+    text-shadow: var(--osd-shadow);
+  }
+
+  :root[data-hdr] [data-stage-chrome] svg {
+    filter: var(--osd-shadow-shape);
+  }
+
+  /*
+   * A needle is lit: the bright accent in both themes (DESIGN.md §1). What
+   * surrounds it differs. On a light surface it takes a line of the accent
+   * ink, or it would be yellow on white; on the stage it takes a line of
+   * void, so it stays drawn over a white picture; on a dark surface it needs
+   * neither.
+   */
+  .needle {
+    background: var(--accent-fill);
+    box-shadow: 0 0 0 1px var(--needle-edge);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}

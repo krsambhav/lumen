@@ -1,0 +1,132 @@
+Lumen — third-party software
+
+Lumen is built on the open-source software listed here. Each entry gives the
+version Lumen pins, its licence, and where the licence text is. Full texts are
+in the LICENSES directory.
+
+This file covers the components Lumen ships or drives directly. The complete,
+machine-generated list of Rust crates and npm packages compiled into a release
+is produced when the app is packaged and is shipped inside the app bundle as
+THIRD-PARTY-LICENSES.
+
+
+1. Playback engine and media libraries
+======================================
+
+These are compiled from source by scripts/build-deps.sh, at the versions and
+commits pinned in that script, and shipped as dynamic libraries in
+Lumen.app/Contents/Frameworks (and, for FFmpeg's tools, as separate programs).
+
+mpv 0.42.0 (libmpv)                        https://mpv.io
+    LGPL-2.1-or-later. Built with -Dgpl=false, which selects mpv's LGPL
+    subset; no GPL-only part of mpv is compiled in.
+    Text: LICENSES/mpv-LGPL-2.1.txt, LICENSES/mpv-Copyright.txt
+    Modified: scripts/patches/mpv-library-without-swift.patch (lets the
+    library build and run without mpv's Swift window code, which Lumen does
+    not use) and scripts/patches/mpv-subtitle-switch-keeps-buffer.patch
+    (switching to another subtitle track keeps the buffered picture and
+    sound playing instead of discarding them, so the switch does not stall).
+
+FFmpeg 9.0.2                               https://ffmpeg.org
+    LGPL-2.1-or-later. Configured without --enable-gpl and without
+    --enable-nonfree; the build script fails if either appears.
+    Text: LICENSES/ffmpeg-LGPL-2.1.txt, LICENSES/ffmpeg-LICENSE.md
+
+libplacebo 7.387.0                         https://code.videolan.org/videolan/libplacebo
+    LGPL-2.1-or-later.                     Text: LICENSES/libplacebo-LGPL-2.1.txt
+
+FriBidi 1.0.18                             https://github.com/fribidi/fribidi
+    LGPL-2.1-or-later.                     Text: LICENSES/fribidi-LGPL-2.1.txt
+
+LAME 3.100                                 https://lame.sourceforge.io
+    LGPL-2.0-or-later.                     Text: LICENSES/lame-LGPL-2.0.txt
+
+libass 0.17.5                              https://github.com/libass/libass
+    ISC.                                   Text: LICENSES/libass-ISC.txt
+
+HarfBuzz 15.1.0                            https://harfbuzz.github.io
+    MIT ("Old MIT").                       Text: LICENSES/harfbuzz-MIT.txt
+
+FreeType 2.15.0                            https://freetype.org
+    FreeType License (FTL).                Text: LICENSES/freetype-FTL.txt
+    Portions of this software are copyright (c) The FreeType Project
+    (www.freetype.org). All rights reserved.
+
+dav1d 1.5.4                                https://code.videolan.org/videolan/dav1d
+    BSD-2-Clause.                          Text: LICENSES/dav1d-BSD-2-Clause.txt
+
+Lua 5.2.4                                  https://www.lua.org
+    MIT.                                   Text: LICENSES/lua-MIT.txt
+
+How the LGPL terms are met
+--------------------------
+libmpv and the FFmpeg libraries are separate dynamic libraries that Lumen
+loads at run time; Lumen does not link them statically. FriBidi, libplacebo
+and LAME are linked into those libraries, not into Lumen. You may replace any
+of them with your own build: the exact sources, configuration and the one
+patch are in scripts/build-deps.sh and scripts/patches, and running that
+script reproduces the libraries Lumen ships.
+
+
+2. Software Lumen runs but does not ship
+========================================
+
+yt-dlp                                     https://github.com/yt-dlp/yt-dlp
+    Lumen uses yt-dlp to open and download online video. It is not included
+    in the app: Lumen downloads the official release on first use, verifies
+    its checksum, and runs it as a separate program.
+    yt-dlp's source is released under the Unlicense. Its release binaries
+    bundle other software and are, as a whole, licensed under GPL-3.0-or-later;
+    see the yt-dlp project for the texts and sources.
+
+
+Whisper "base" speech model, ggml-base-q5_1.bin
+                                           https://github.com/openai/whisper
+    Used to sync subtitles to a film's speech. It is not included in the
+    app: Lumen downloads whisper.cpp's conversion of it from Hugging Face
+    (https://huggingface.co/ggerganov/whisper.cpp) the first time a subtitle
+    is synced, checks its SHA-256, and runs it on the Mac. The model weights
+    are released by OpenAI under the MIT licence.
+
+
+3. Typeface
+===========
+
+Plus Jakarta Sans                          https://github.com/tokotype/PlusJakartaSans
+    Copyright 2020 The Plus Jakarta Sans Project Authors.
+    SIL Open Font License 1.1.             Text: LICENSES/plus-jakarta-sans-OFL-1.1.txt
+    Packaged for bundling by Fontsource (MIT).
+
+
+4. Application framework and interface libraries
+================================================
+
+Tauri 2                    MIT or Apache-2.0      https://tauri.app
+tauri-specta, specta       MIT                    https://github.com/specta-rs
+objc2 and framework crates MIT                    https://github.com/madsmtm/objc2
+rusqlite                   MIT                    https://github.com/rusqlite/rusqlite
+SQLite                     Public domain          https://sqlite.org
+tokio                      MIT                    https://tokio.rs
+whisper.cpp, ggml          MIT                    https://github.com/ggml-org/whisper.cpp
+    Speech recognition for syncing subtitles, compiled into Lumen through
+    the whisper-rs crate (Unlicense, https://codeberg.org/tazz4843/whisper-rs).
+    Runs on the GPU through Metal.
+sha2 (RustCrypto)          MIT or Apache-2.0      https://github.com/RustCrypto/hashes
+mdns-sd                    MIT or Apache-2.0      https://github.com/keepsimple1/mdns-sd
+    Finds Chromecasts on the local network.
+rustls, tokio-rustls       MIT, Apache-2.0 or ISC https://github.com/rustls/rustls
+ring                       Apache-2.0 and ISC     https://github.com/briansmith/ring
+    TLS for the Google Cast protocol, which Lumen speaks itself.
+serde, serde_json          MIT or Apache-2.0      https://serde.rs
+React 18                   MIT                    https://react.dev
+Radix UI                   MIT                    https://www.radix-ui.com
+shadcn/ui (patterns)       MIT                    https://ui.shadcn.com
+lucide                     ISC                    https://lucide.dev
+cmdk                       MIT                    https://github.com/pacocoursey/cmdk
+sonner                     MIT                    https://github.com/emilkowalski/sonner
+Zustand                    MIT                    https://github.com/pmndrs/zustand
+dnd kit                    MIT                    https://dndkit.com
+TanStack Virtual           MIT                    https://tanstack.com/virtual
+Tailwind CSS               MIT                    https://tailwindcss.com
+class-variance-authority   Apache-2.0             https://cva.style
+clsx, tailwind-merge       MIT

@@ -1,0 +1,363 @@
+/*
+ * Design tokens (DESIGN.md §2–§5).
+ *
+ * Neutrals take their hue from --tint-h, which follows the accent. The values
+ * here are for the default accent, Limelight (hue 106); design/theme.ts
+ * rewrites --tint-h and the --accent-* variables when the user picks another.
+ * design/color.ts is the source of these numbers and a test keeps this file
+ * in step with it.
+ *
+ * Each block is declared twice: sRGB first, for WebKit older than Safari 15.4
+ * (macOS 12.0–12.2), then OKLCH inside @supports.
+ */
+
+:root {
+  --tint-h: 106;
+
+  /* Accent as ink, per theme. */
+  --accent-d: #ece45c;
+  --accent-soft-d: #312f13;
+  --accent-fill-hover-d: #f9f16b;
+  --accent-l: #6c6600;
+  --accent-soft-l: #e8e7c1;
+  --accent-fill-hover-l: #e0d84f;
+  /* Accent as a fill, and the text on it: the same in both themes. */
+  --accent-fill: #ece45c;
+  --accent-fg: #1a1908;
+
+  --dur-fast: 150ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+  /*
+   * The stage chrome leaving on its own: long and soft, starting gently and
+   * settling slowly, so the controls melt away rather than blink out.
+   */
+  --dur-leave: 500ms;
+  --ease-leave: cubic-bezier(0.4, 0, 0.2, 1);
+  --shift-sm: 4px;
+  --shift-lg: 16px;
+  --scale-from: 0.98;
+
+  --titlebar-h: 44px;
+  /* Space the title bar keeps clear for the traffic lights: 20 + 60 wide + 8. */
+  --titlebar-lead: 88px;
+  --controlbar-h: 84px;
+  --gutter: 20px;
+  --sidebar-w: 232px;
+  --inspector-w: 348px;
+  --palette-w: 600px;
+  /* The full length of each scrim gradient; an element painted with one must be this tall. */
+  --scrim-bottom-h: 156px;
+  --scrim-top-h: 96px;
+  /* On-screen display text: sized for someone sitting back from the screen. */
+  --osd-size: clamp(1.25rem, 3.4vh, 2.75rem);
+}
+
+/* Dark: the default theme, and always the stage. */
+:root,
+[data-theme="dark"],
+.stage {
+  color-scheme: dark;
+
+  --void: #040403;
+  --bg: #0c0c09;
+  --surface-1: #141410;
+  --surface-2: #1c1c18;
+  --surface-3: #272722;
+  --surface-4: #31312b;
+  --line: #31312b;
+  --line-strong: #75756e;
+  --ink-1: #efefe6;
+  --ink-2: #b2b2a9;
+  --ink-3: #909087;
+
+  --accent: var(--accent-d);
+  --accent-soft: var(--accent-soft-d);
+  --accent-fill-hover: var(--accent-fill-hover-d);
+
+  --danger: #fd736d;
+  --warning: #ffae5d;
+  --success: #71d790;
+
+  --weight-body: 420;
+  /* In dark, depth comes from lighter surfaces; only the stage adds a shadow. */
+  --shadow-pop: 0 0 0 0 transparent;
+  --shadow-palette: 0 16px 48px -16px rgba(4, 4, 3, 0.7);
+
+  /* What surrounds a needle: on a dark surface, nothing. Lines drawn over video are edged in void. */
+  --needle-edge: transparent;
+  --stage-edge: var(--void);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* A lit needle on a light surface takes a line of the accent ink, or it would be yellow on white. */
+  --needle-edge: var(--accent);
+
+  --bg: #f4f4ef;
+  --surface-1: #fafaf7;
+  --surface-2: #fdfdfc;
+  --surface-3: #eaeae5;
+  --surface-4: #deded8;
+  --line: #d9d9d4;
+  --line-strong: #81817a;
+  --ink-1: #1b1b15;
+  --ink-2: #4e4e46;
+  --ink-3: #64645c;
+
+  --accent: var(--accent-l);
+  --accent-soft: var(--accent-soft-l);
+  --accent-fill-hover: var(--accent-fill-hover-l);
+
+  --danger: #be222a;
+  --warning: #995600;
+  --success: #05773b;
+
+  --weight-body: 450;
+  --shadow-pop: 0 8px 24px -10px rgba(27, 27, 21, 0.22);
+  --shadow-palette: 0 16px 48px -16px rgba(27, 27, 21, 0.3);
+}
+
+/* The stage keeps the dark tokens inside a light window. */
+[data-theme="light"] .stage {
+  color-scheme: dark;
+
+  --bg: #0c0c09;
+  --surface-1: #141410;
+  --surface-2: #1c1c18;
+  --surface-3: #272722;
+  --surface-4: #31312b;
+  --line: #31312b;
+  --line-strong: #75756e;
+  --ink-1: #efefe6;
+  --ink-2: #b2b2a9;
+  --ink-3: #909087;
+
+  --accent: var(--accent-d);
+  --accent-soft: var(--accent-soft-d);
+  --accent-fill-hover: var(--accent-fill-hover-d);
+
+  --danger: #fd736d;
+  --warning: #ffae5d;
+  --success: #71d790;
+
+  --weight-body: 420;
+}
+
+/*
+ * Overlays opened from the stage float over a moving picture and need a
+ * shadow. And a needle on the stage takes a line of void, so it is drawn
+ * over any picture (see `.needle` in styles.css).
+ */
+/* biome-ignore lint/style/noDescendingSpecificity: sets only the shadows and the needle's edge, which the earlier stage rule leaves alone */
+.stage,
+[data-theme="light"] .stage {
+  --shadow-pop: 0 12px 32px -12px rgba(4, 4, 3, 0.6);
+  --shadow-palette: 0 16px 48px -16px rgba(4, 4, 3, 0.7);
+  --needle-edge: var(--void);
+}
+
+/*
+ * Over-video colours: the only places translucency is allowed.
+ *
+ * Both scrims follow one smooth curve (smootherstep), sampled at fixed
+ * lengths, so there is no visible edge where the darkness begins. They back
+ * text and icons only, and are no longer than that takes; color.test.ts
+ * checks 4.5:1 for stage text over a pure white picture against the layout:
+ *
+ *   bottom scrim   0–46 px  text and buttons of the transport row
+ *   top scrim      0–32 px  the title
+ *
+ * Lines do not lean on the scrims. The timeline's track and every needle on
+ * the stage carry a 1 px outline of void (--stage-edge, --needle-edge), so
+ * they are drawn over a white picture with no scrim behind them at all.
+ *
+ * The on-screen display appears on its own, without the rest of the chrome,
+ * and must not dim the picture to do it. Its letters and its scale are
+ * outlined instead, the way subtitles are: a line of void around every shape
+ * and a soft shadow beyond it. The sizes are in ems, so the outline is 1 px
+ * at the smallest type size and grows with it.
+ */
+:root {
+  --stage-ink: #efefe6;
+  --stage-ink-2: rgba(239, 239, 230, 0.72);
+  --stage-hover: rgba(239, 239, 230, 0.1);
+  --stage-press: rgba(239, 239, 230, 0.16);
+  --stage-track: rgba(239, 239, 230, 0.52);
+  --stage-buffer: rgba(239, 239, 230, 0.7);
+  /* Laid over the picture while the palette is open on it: the film shows through, dimmed. */
+  --stage-veil: rgba(4, 4, 3, 0.58);
+  /*
+   * The width of the stroke; half of it falls outside the letter. It grows
+   * with the type up to 2.5 px, past which it would start to look like a
+   * sticker's edge.
+   */
+  --osd-outline: min(0.1em, 2.5px);
+  --osd-shadow: 0 0 0.2em rgba(4, 4, 3, 0.5), 0 0.05em 0.7em rgba(4, 4, 3, 0.4);
+  --osd-shadow-shape: drop-shadow(0 0 0.2em rgba(4, 4, 3, 0.5));
+  --scrim-bottom: linear-gradient(
+    to top,
+    rgba(4, 4, 3, 0.86) 0px,
+    rgba(4, 4, 3, 0.857) 12px,
+    rgba(4, 4, 3, 0.835) 24px,
+    rgba(4, 4, 3, 0.788) 36px,
+    rgba(4, 4, 3, 0.711) 48px,
+    rgba(4, 4, 3, 0.61) 60px,
+    rgba(4, 4, 3, 0.492) 72px,
+    rgba(4, 4, 3, 0.368) 84px,
+    rgba(4, 4, 3, 0.25) 96px,
+    rgba(4, 4, 3, 0.149) 108px,
+    rgba(4, 4, 3, 0.072) 120px,
+    rgba(4, 4, 3, 0.025) 132px,
+    rgba(4, 4, 3, 0.003) 144px,
+    rgba(4, 4, 3, 0) 156px
+  );
+  --scrim-top: linear-gradient(
+    to bottom,
+    rgba(4, 4, 3, 0.78) 0px,
+    rgba(4, 4, 3, 0.776) 8px,
+    rgba(4, 4, 3, 0.752) 16px,
+    rgba(4, 4, 3, 0.699) 24px,
+    rgba(4, 4, 3, 0.616) 32px,
+    rgba(4, 4, 3, 0.51) 40px,
+    rgba(4, 4, 3, 0.39) 48px,
+    rgba(4, 4, 3, 0.27) 56px,
+    rgba(4, 4, 3, 0.164) 64px,
+    rgba(4, 4, 3, 0.081) 72px,
+    rgba(4, 4, 3, 0.028) 80px,
+    rgba(4, 4, 3, 0.004) 88px,
+    rgba(4, 4, 3, 0) 96px
+  );
+}
+
+@supports (color: oklch(0% 0 0)) {
+  :root {
+    --accent-d: oklch(90% 0.155 106);
+    --accent-soft-d: oklch(30% 0.045 106);
+    --accent-fill-hover-d: oklch(94% 0.155 106);
+    --accent-l: oklch(50% 0.1067 106);
+    --accent-soft-l: oklch(92% 0.05 106);
+    --accent-fill-hover-l: oklch(86.5% 0.155 106);
+    --accent-fill: oklch(90% 0.155 106);
+    --accent-fg: oklch(21% 0.03 106);
+
+    --stage-ink: oklch(95% 0.012 var(--tint-h));
+    --stage-ink-2: oklch(95% 0.012 var(--tint-h) / 0.72);
+    --stage-hover: oklch(95% 0.012 var(--tint-h) / 0.1);
+    --stage-press: oklch(95% 0.012 var(--tint-h) / 0.16);
+    --stage-track: oklch(95% 0.012 var(--tint-h) / 0.52);
+    --stage-buffer: oklch(95% 0.012 var(--tint-h) / 0.7);
+    --stage-veil: oklch(11% 0.004 var(--tint-h) / 0.58);
+    --scrim-bottom: linear-gradient(
+      to top,
+      oklch(11% 0.004 var(--tint-h) / 0.86) 0px,
+      oklch(11% 0.004 var(--tint-h) / 0.857) 12px,
+      oklch(11% 0.004 var(--tint-h) / 0.835) 24px,
+      oklch(11% 0.004 var(--tint-h) / 0.788) 36px,
+      oklch(11% 0.004 var(--tint-h) / 0.711) 48px,
+      oklch(11% 0.004 var(--tint-h) / 0.61) 60px,
+      oklch(11% 0.004 var(--tint-h) / 0.492) 72px,
+      oklch(11% 0.004 var(--tint-h) / 0.368) 84px,
+      oklch(11% 0.004 var(--tint-h) / 0.25) 96px,
+      oklch(11% 0.004 var(--tint-h) / 0.149) 108px,
+      oklch(11% 0.004 var(--tint-h) / 0.072) 120px,
+      oklch(11% 0.004 var(--tint-h) / 0.025) 132px,
+      oklch(11% 0.004 var(--tint-h) / 0.003) 144px,
+      oklch(11% 0.004 var(--tint-h) / 0) 156px
+    );
+    --scrim-top: linear-gradient(
+      to bottom,
+      oklch(11% 0.004 var(--tint-h) / 0.78) 0px,
+      oklch(11% 0.004 var(--tint-h) / 0.776) 8px,
+      oklch(11% 0.004 var(--tint-h) / 0.752) 16px,
+      oklch(11% 0.004 var(--tint-h) / 0.699) 24px,
+      oklch(11% 0.004 var(--tint-h) / 0.616) 32px,
+      oklch(11% 0.004 var(--tint-h) / 0.51) 40px,
+      oklch(11% 0.004 var(--tint-h) / 0.39) 48px,
+      oklch(11% 0.004 var(--tint-h) / 0.27) 56px,
+      oklch(11% 0.004 var(--tint-h) / 0.164) 64px,
+      oklch(11% 0.004 var(--tint-h) / 0.081) 72px,
+      oklch(11% 0.004 var(--tint-h) / 0.028) 80px,
+      oklch(11% 0.004 var(--tint-h) / 0.004) 88px,
+      oklch(11% 0.004 var(--tint-h) / 0) 96px
+    );
+  }
+
+  :root,
+  [data-theme="dark"],
+  .stage,
+  [data-theme="light"] .stage {
+    --void: oklch(11% 0.004 var(--tint-h));
+    --bg: oklch(15.5% 0.006 var(--tint-h));
+    --surface-1: oklch(19% 0.007 var(--tint-h));
+    --surface-2: oklch(22.5% 0.008 var(--tint-h));
+    --surface-3: oklch(27% 0.009 var(--tint-h));
+    --surface-4: oklch(31% 0.009 var(--tint-h));
+    --line: oklch(31% 0.009 var(--tint-h));
+    --line-strong: oklch(56% 0.01 var(--tint-h));
+    --ink-1: oklch(95% 0.012 var(--tint-h));
+    --ink-2: oklch(76% 0.012 var(--tint-h));
+    --ink-3: oklch(65% 0.012 var(--tint-h));
+
+    --danger: oklch(72% 0.17 25);
+    --warning: oklch(82% 0.14 62);
+    --success: oklch(80% 0.14 152);
+
+    --shadow-palette: 0 16px 48px -16px oklch(11% 0.004 var(--tint-h) / 0.7);
+  }
+
+  [data-theme="light"] {
+    --bg: oklch(96.5% 0.006 var(--tint-h));
+    --surface-1: oklch(98.5% 0.004 var(--tint-h));
+    --surface-2: oklch(99.5% 0.002 var(--tint-h));
+    --surface-3: oklch(93.5% 0.007 var(--tint-h));
+    --surface-4: oklch(90% 0.008 var(--tint-h));
+    --line: oklch(88.5% 0.008 var(--tint-h));
+    --line-strong: oklch(60% 0.01 var(--tint-h));
+    --ink-1: oklch(22% 0.012 var(--tint-h));
+    --ink-2: oklch(42% 0.012 var(--tint-h));
+    --ink-3: oklch(50% 0.012 var(--tint-h));
+
+    --danger: oklch(52% 0.19 25);
+    --warning: oklch(52% 0.12 62);
+    --success: oklch(50% 0.13 152);
+
+    --shadow-pop: 0 8px 24px -10px oklch(22% 0.012 var(--tint-h) / 0.22);
+    --shadow-palette: 0 16px 48px -16px oklch(22% 0.012 var(--tint-h) / 0.3);
+  }
+
+  /* biome-ignore lint/style/noDescendingSpecificity: sets only the shadows, which the earlier stage rule leaves alone */
+  .stage,
+  [data-theme="light"] .stage {
+    --shadow-pop: 0 12px 32px -12px oklch(11% 0.004 var(--tint-h) / 0.6);
+    --shadow-palette: 0 16px 48px -16px oklch(11% 0.004 var(--tint-h) / 0.7);
+  }
+}
+
+/* "Increase contrast" in macOS: the quietest text and the hairlines step up. */
+@media (prefers-contrast: more) {
+  :root,
+  [data-theme="dark"],
+  [data-theme="light"],
+  .stage,
+  [data-theme="light"] .stage {
+    --ink-3: var(--ink-2);
+    --line: var(--line-strong);
+    --stage-ink-2: var(--stage-ink);
+    /* The timeline keeps its three steps (played, buffered, the rest), each stronger. */
+    --stage-track: rgba(239, 239, 230, 0.7);
+    --stage-buffer: rgba(239, 239, 230, 0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 100ms;
+    --dur-base: 100ms;
+    --dur-leave: 100ms;
+    --shift-sm: 0px;
+    --shift-lg: 0px;
+    --scale-from: 1;
+  }
+}
