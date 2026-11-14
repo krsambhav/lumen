@@ -138,13 +138,16 @@ install() {
   [[ "$built" == "$VERSION" ]] || fail "the build is of $built, and the version is now $VERSION; build again"
 
   # Asked to quit, as from its menu, so that where a film was is written down.
-  if pgrep -xq lumen; then
+  # Only the installed app counts as open: a development build that someone
+  # is running from the source tree is none of this script's business.
+  local installed="/Applications/Lumen.app/Contents/MacOS/lumen"
+  if pgrep -qf "^$installed"; then
     osascript -e 'tell application id "app.lumen.player" to quit' >/dev/null 2>&1 || true
     for _ in $(seq 1 50); do
-      pgrep -xq lumen || break
+      pgrep -qf "^$installed" || break
       sleep 0.1
     done
-    pgrep -xq lumen && fail "Lumen is still open; quit it and run this again"
+    pgrep -qf "^$installed" && fail "Lumen is still open; quit it and run this again"
   fi
 
   # Copied whole beside the old one before the old one goes, so that a copy
