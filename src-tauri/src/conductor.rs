@@ -289,9 +289,10 @@ impl Conductor {
 
     /// Opens something from Recently played. One that was played in a
     /// playlist brings the whole playlist back, as it stood, and plays that
-    /// item of it (where it was left if `resume` is set); anything else
-    /// opens alone, as `open` would.
-    pub fn open_recent(&self, source: &str, resume: bool) -> AppResult<()> {
+    /// item of it, or the item `play` names if it is one of the playlist's
+    /// (where it was left if `resume` is set); anything else opens alone,
+    /// as `open` would.
+    pub fn open_recent(&self, source: &str, play: Option<&str>, resume: bool) -> AppResult<()> {
         let playlist = history::find(&self.db, source)?
             .and_then(|entry| entry.playlist)
             .filter(|playlist| playlist.items.iter().any(|item| item.source == source));
@@ -309,6 +310,10 @@ impl Conductor {
                     .flatten()
                     .map(|name| (id, name))
             });
+        let start = play
+            .filter(|play| playlist.items.iter().any(|item| item.source == *play))
+            .unwrap_or(source)
+            .to_owned();
         let incoming = playlist
             .items
             .into_iter()
@@ -318,7 +323,7 @@ impl Conductor {
                 duration: item.duration,
             })
             .collect();
-        self.replace_at(incoming, kept, resume, Some(playlist.key), Some(source))
+        self.replace_at(incoming, kept, resume, Some(playlist.key), Some(&start))
     }
 
     /// Replaces the queue with addresses whose names are already known (a

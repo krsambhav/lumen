@@ -985,7 +985,7 @@ fn a_playlist_is_one_entry_in_recently_played_and_comes_back_whole() {
     // Opened again from there, the whole playlist is back, at that item, where it was left.
     rig.conductor.close().unwrap();
     rig.goes_idle();
-    rig.conductor.open_recent(B, true).unwrap();
+    rig.conductor.open_recent(B, None, true).unwrap();
     assert_eq!(rig.titles(), ["a", "b", "c"]);
     assert_eq!(rig.current().as_deref(), Some("b"));
     assert!(matches!(
@@ -1004,7 +1004,7 @@ fn something_played_alone_opens_alone_from_recently_played() {
     rig.conductor.open(&all(&[A]), true).unwrap();
     rig.loads(A, Some(TWO_HOURS));
     assert_eq!(rig.remembered(A).unwrap().playlist, None);
-    rig.conductor.open_recent(A, false).unwrap();
+    rig.conductor.open_recent(A, None, false).unwrap();
     assert_eq!(rig.titles(), ["a"]);
 }
 
@@ -1021,6 +1021,26 @@ fn a_saved_playlist_is_the_same_playlist_in_the_history_every_time() {
     rig.loads(A, Some(TWO_HOURS));
     assert_eq!(rig.remembered(A).unwrap().playlist.unwrap().key, first.key);
     // From Recently played it comes back under its name.
-    rig.conductor.open_recent(A, true).unwrap();
+    rig.conductor.open_recent(A, None, true).unwrap();
     assert_eq!(rig.conductor.snapshot().name.as_deref(), Some("Evening"));
+}
+
+#[test]
+fn another_item_of_a_recent_playlist_can_be_chosen_to_play() {
+    let rig = Rig::new();
+    rig.conductor.open(&all(&[A, B, C]), true).unwrap();
+    rig.loads(A, Some(TWO_HOURS));
+    rig.at(600.0);
+    rig.status(PlaybackStatus::Paused);
+    rig.conductor.close().unwrap();
+    rig.goes_idle();
+
+    // Chosen from the list: the playlist comes back whole, playing that item.
+    rig.conductor.open_recent(A, Some(C), true).unwrap();
+    assert_eq!(rig.titles(), ["a", "b", "c"]);
+    assert_eq!(rig.current().as_deref(), Some("c"));
+    assert!(matches!(rig.last_open(), Call::Open { source, .. } if source == C));
+    // Something that is not in the playlist is not played in its place.
+    rig.conductor.open_recent(A, Some("/elsewhere.mkv"), true).unwrap();
+    assert_eq!(rig.current().as_deref(), Some("a"));
 }

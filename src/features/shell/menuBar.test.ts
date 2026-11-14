@@ -338,7 +338,7 @@ describe("the menu bar's submenus", () => {
 
     runMenuItem("recent:0");
     // Through Recently played's own way in, which brings back a playlist whole.
-    expect(commands.playlistOpenRecent).toHaveBeenCalledWith("/films/Film 1.mkv", true);
+    expect(commands.playlistOpenRecent).toHaveBeenCalledWith("/films/Film 1.mkv", null, true);
   });
 
   it("dims a film that is no longer where it was, and does not try to open it", () => {

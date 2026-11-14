@@ -413,21 +413,57 @@ test.describe("home, once something has been played", () => {
     const region = page.getByRole("region", { name: "Recently played" });
     await expect(region).toBeVisible();
     // Two episodes were played, and the playlist is listed once, by the last.
-    const tiles = region.getByRole("button").filter({ hasNotText: /^Clear$/ });
-    await expect(tiles).toHaveCount(1);
-    await expect(tiles.first()).toContainText("2 of 5");
+    await expect(region.locator("[data-tile]")).toHaveCount(1);
+    const tile = region.getByRole("button", { name: /The Crossing/ });
+    await expect(tile).toContainText("2 of 5");
 
-    await tiles.first().click();
+    await tile.click();
     await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
     const queue = await page.evaluate(() => window.__lumenMock?.queue());
     expect(queue?.items).toHaveLength(5);
     expect(queue?.items.findIndex((item) => item.id === queue.current)).toBe(1);
   });
 
+  test("lists a recent playlist without playing it, and plays the item chosen", async ({
+    page,
+  }) => {
+    await openQueue(page);
+    await page.getByRole("button", { name: "Next item" }).click();
+    await page.keyboard.press("Meta+.");
+    const chip = page.getByRole("button", { name: "Show playlist, 5 items" });
+    await chip.click();
+    const list = page.getByRole("dialog", { name: /Playlist/ });
+    await expect(list).toBeVisible();
+    // Nothing plays until something is chosen.
+    await expect(page.getByRole("slider", { name: "Position" })).toHaveCount(0);
+    const rows = list.getByRole("button");
+    await expect(rows).toHaveCount(5);
+    await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
+    await expect(rows.nth(1)).toContainText("Last played");
+    await settle(page);
+    // Rows line up: one left edge, none touching, the list inside the window.
+    const boxes = await Promise.all((await rows.all()).map((row) => box(row)));
+    expect(new Set(boxes.map((row) => Math.round(row.x))).size).toBe(1);
+    for (const [index, row] of boxes.slice(1).entries()) {
+      const above = boxes[index] as (typeof boxes)[number];
+      expect(row.y).toBeGreaterThanOrEqual(above.y + above.height);
+    }
+    const panel = await box(list);
+    expect(panel.x + panel.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) - 8);
+
+    await rows.nth(3).click();
+    await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
+    const queue = await page.evaluate(() => window.__lumenMock?.queue());
+    expect(queue?.items).toHaveLength(5);
+    expect(queue?.items.findIndex((item) => item.id === queue.current)).toBe(3);
+  });
+
   test("plays a tile from where it was left, and says so", async ({ page }) => {
     await openHistory(page);
     await page.getByRole("button", { name: /The Long Take/ }).click();
-    expect(await calls(page, "playlistOpenRecent")).toEqual([{ source: FILM, resume: true }]);
+    expect(await calls(page, "playlistOpenRecent")).toEqual([
+      { source: FILM, play: null, resume: true },
+    ]);
     await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
     // In a toast, which can offer the other choice; the on-screen display could not.
     const toast = page.locator("[data-sonner-toast]");
@@ -462,6 +498,7 @@ test.describe("home, once something has been played", () => {
     await page.getByRole("menuitem", { name: "Play from the beginning" }).click();
     expect((await calls(page, "playlistOpenRecent")).at(-1)).toEqual({
       source: "/Users/me/Films/Solaris (1972).mkv",
+      play: null,
       resume: false,
     });
   });

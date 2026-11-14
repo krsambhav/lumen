@@ -198,10 +198,11 @@ export const commands = {
 	playlistsUndelete: (id: number, options?: InvokeOptions) => typedError<SavedPlaylist, AppError>(__TAURI_INVOKE("playlists_undelete", { id }, options)),
 	/**
 	 *  Opens something from Recently played: one played in a playlist brings
-	 *  the whole playlist back and plays that item of it; anything else opens
-	 *  alone. From where it was left if `resume` is set.
+	 *  the whole playlist back and plays that item of it, or the item `play`
+	 *  names (chosen from the playlist's list); anything else opens alone.
+	 *  From where it was left if `resume` is set.
 	 */
-	playlistOpenRecent: (source: string, resume: boolean, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("playlist_open_recent", { source, resume }, options)),
+	playlistOpenRecent: (source: string, play: string | null, resume: boolean, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("playlist_open_recent", { source, play, resume }, options)),
 	/**  What was played most recently, newest first. */
 	historyRecent: (limit: number, options?: InvokeOptions) => typedError<Recent[], AppError>(__TAURI_INVOKE("history_recent", { limit }, options)),
 	/**  Forgets that something was played. Returns whether it was remembered. */
@@ -1137,7 +1138,7 @@ export type MockCommandHandlers = {
     playlistsRename: (args: { id: number; name: string }) => SavedPlaylist | Promise<SavedPlaylist>,
     playlistsDelete: (args: { id: number }) => boolean | Promise<boolean>,
     playlistsUndelete: (args: { id: number }) => SavedPlaylist | Promise<SavedPlaylist>,
-    playlistOpenRecent: (args: { source: string; resume: boolean }) => null | Promise<null>,
+    playlistOpenRecent: (args: { source: string; play: string | null; resume: boolean }) => null | Promise<null>,
     historyRecent: (args: { limit: number }) => Recent[] | Promise<Recent[]>,
     historyForget: (args: { source: string }) => boolean | Promise<boolean>,
     historyRestore: (args: { entry: HistoryEntry }) => null | Promise<null>,

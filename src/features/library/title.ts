@@ -43,3 +43,27 @@ export function readTitle(title: string): ReadTitle {
   const cut = tidy(text.slice(0, text.search(RELEASE)));
   return { name: cut === "" ? title : cut, episode: null };
 }
+
+/** "S02E06", "s2e6", "2x06": where an episode's number is in a name. */
+const EPISODE_CODE = /\bS\d{1,2}[\s-]?E\d{1,3}(?!\d)|\b\d{1,2}x\d{2,3}(?!\d)/i;
+
+/**
+ * An item of a show's playlist as its row reads, the show being named
+ * above the list: "S2 E6" and the episode's own name ("Behind the Red
+ * Door"), or `null` for a name with no episode in it.
+ */
+export function readEpisodeTitle(title: string): { episode: string; name: string } | null {
+  const found = episodeOf(title);
+  if (!found) {
+    return null;
+  }
+  const text = title.replace(/\.[a-z0-9]{2,4}$/i, "").replace(/[._]+/g, " ");
+  const at = EPISODE_CODE.exec(text);
+  let rest = at ? text.slice(at.index + at[0].length) : "";
+  const junk = rest.search(RELEASE);
+  if (junk >= 0) {
+    rest = rest.slice(0, junk);
+  }
+  const name = tidy(rest.replace(/^[\s\-:–—]+/, "").replace(/[\s([]+$/, ""));
+  return { episode: `S${found.season} E${found.episode}`, name };
+}

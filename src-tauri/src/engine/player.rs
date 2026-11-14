@@ -405,7 +405,14 @@ impl Player {
     }
 
     /// Closes whatever is open and returns to idle.
+    /// Closes what is open, or what is still being opened. Nothing is on
+    /// its way after a stop, so the player's going idle is reported as
+    /// such even when the file never finished loading (a stream that was
+    /// still connecting): otherwise it would wait for that file for ever,
+    /// and the window would stay on its loading stage.
     pub fn stop(&self) -> AppResult<()> {
+        self.shared.opening.store(false, Ordering::Release);
+        *self.shared.resume_at.lock() = None;
         Ok(self.mpv.command(&["stop"])?)
     }
 
@@ -1336,6 +1343,36 @@ mod tests {
             _ => None,
         });
         assert!(position < 1.0, "restarted at {position}");
+    }
+
+    #[test]
+    fn stopping_a_stream_that_is_still_connecting_returns_to_idle() {
+        use std::io::{Read, Write};
+        // A server that answers, then sends nothing more: a stream that never loads.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}/stalled.mkv", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                std::thread::spawn(move || {
+                    let mut stream = stream;
+                    let _ = stream.read(&mut [0; 4096]);
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\nContent-Length: 900000000\r\n\r\n\x1aE\xdf\xa3",
+                    );
+                    std::thread::sleep(Duration::from_secs(60));
+                });
+            }
+        });
+        let harness = Harness::new();
+        harness.player.open(&address).unwrap();
+        harness.wait_until("loading", |snapshot| {
+            snapshot.status == PlaybackStatus::Loading && snapshot.source.is_some()
+        });
+        std::thread::sleep(Duration::from_millis(500));
+        harness.player.stop().unwrap();
+        harness.wait_until("idle", |snapshot| {
+            snapshot.status == PlaybackStatus::Idle && snapshot.source.is_none()
+        });
     }
 
     #[test]

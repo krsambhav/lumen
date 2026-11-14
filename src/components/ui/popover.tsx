@@ -27,6 +27,8 @@ interface PopoverContentProps {
   align?: "start" | "center" | "end";
   sideOffset?: number;
   className?: string;
+  /** Where the keyboard goes on opening; by default the first control in it. */
+  onOpenAutoFocus?: (event: Event) => void;
   children: ReactNode;
 }
 
@@ -36,6 +38,7 @@ export function PopoverContent({
   align = "end",
   sideOffset = 8,
   className,
+  onOpenAutoFocus,
   children,
 }: PopoverContentProps) {
   const surfaceClass = useSurfaceClass();
@@ -47,6 +50,7 @@ export function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         collisionPadding={CLEAR_OF_EDGES}
+        {...(onOpenAutoFocus ? { onOpenAutoFocus } : {})}
         className={cn(
           surfaceClass,
           "z-popover w-72 max-w-[calc(100vw-1rem)] rounded-md border border-line bg-surface-2 p-3",

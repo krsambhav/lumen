@@ -982,16 +982,22 @@ export function installMockBackend(): LumenMock {
     playlistOpenRecent: (args) => {
       record("playlistOpenRecent", args, null);
       const known = history.find((entry) => entry.source === args.source);
-      const at =
-        args.resume && known && !known.finished && known.position >= 10 ? known.position - 3 : 0;
       const playlist = known?.playlist;
+      // Another item chosen from the list starts from its own place, which the mock does not keep.
+      const other = args.play !== null && args.play !== args.source;
+      const at =
+        args.resume && known && !other && !known.finished && known.position >= 10
+          ? known.position - 3
+          : 0;
       if (!playlist?.items.some((item) => item.source === args.source)) {
         startQueue([args.source], at > 0 ? { position: at } : {});
       } else {
         items = makeItems(playlist.items.map((item) => item.source));
         queueKept = playlist.key.startsWith("saved:") ? Number(playlist.key.slice(6)) : null;
         queueKey = playlist.key;
-        const chosen = items.find((item) => item.source === args.source) as QueueItem;
+        const wanted = args.play ?? args.source;
+        const chosen = (items.find((item) => item.source === wanted) ??
+          items.find((item) => item.source === args.source)) as QueueItem;
         current = chosen.id;
         announce();
         load({

@@ -4,11 +4,12 @@ import { send } from "@/lib/notify";
 
 /**
  * Opens something from what was played: one played in a playlist brings
- * the whole playlist back, at that item; anything else opens alone. From
- * where it was left, unless `resume` is false.
+ * the whole playlist back, at that item, or at `play` when another of its
+ * items was chosen; anything else opens alone. From where it was left,
+ * unless `resume` is false.
  */
-export function playRecent(source: string, resume = true): void {
-  send("open that", commands.playlistOpenRecent(source, resume));
+export function playRecent(source: string, resume = true, play: string | null = null): void {
+  send("open that", commands.playlistOpenRecent(source, play, resume));
 }
 
 /** As many as two rows of tiles can show on the widest window worth planning for. */

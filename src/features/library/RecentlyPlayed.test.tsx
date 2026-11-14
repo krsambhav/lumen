@@ -1,5 +1,5 @@
 import { clearMocks } from "@tauri-apps/api/mocks";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,7 +38,7 @@ const A_CLIP = entry("Clip.mp4", { duration: 20, position: 4 });
 const GONE = entry("Moved.mkv", { available: false });
 const STREAM = entry("A lecture", { source: "https://example.com/a", duration: null });
 
-const open = vi.fn((_: { source: string; resume: boolean }) => null);
+const open = vi.fn((_: { source: string; play: string | null; resume: boolean }) => null);
 const forget = vi.fn((_: { source: string }) => true);
 const restore = vi.fn((_: { entry: unknown }) => null);
 
@@ -141,6 +141,7 @@ describe("recently played", () => {
     await userEvent.click(tile("The Long Take"));
     expect(open).toHaveBeenCalledWith({
       source: "/films/The Long Take (2019).mkv",
+      play: null,
       resume: true,
     });
   });
@@ -152,6 +153,7 @@ describe("recently played", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "Play from the beginning" }));
     expect(open).toHaveBeenCalledWith({
       source: "/films/The Long Take (2019).mkv",
+      play: null,
       resume: false,
     });
 
@@ -300,6 +302,46 @@ describe("posters", () => {
     show();
     expect(tile("Episode 2")).toHaveTextContent("2 of 3");
     await userEvent.click(tile("Episode 2"));
-    expect(open).toHaveBeenCalledWith({ source: "/films/Episode 2.mkv", resume: true });
+    expect(open).toHaveBeenCalledWith({
+      source: "/films/Episode 2.mkv",
+      play: null,
+      resume: true,
+    });
+  });
+
+  it("lists the playlist without playing it, marks the item played last, and plays the one chosen", async () => {
+    const items = ["Episode 1.mkv", "Episode 2.mkv", "Episode 3.mkv"].map((title) => ({
+      source: `/films/${title}`,
+      title,
+      duration: 2700,
+    }));
+    useRecents.setState({
+      entries: [
+        entry("Episode 2.mkv", {
+          position: 600,
+          resumesAt: 597,
+          playlist: { key: "1-0", name: null, items },
+        }),
+      ],
+      loaded: true,
+    });
+    show();
+    await userEvent.click(screen.getByRole("button", { name: "Show playlist, 3 items" }));
+    expect(open).not.toHaveBeenCalled();
+    const list = screen.getByRole("dialog", { name: /Playlist/ });
+    const rows = within(list).getAllByRole("button");
+    expect(rows).toHaveLength(3);
+    // The one played last is marked, and the keyboard starts there.
+    expect(rows[1]).toHaveAttribute("aria-current", "true");
+    expect(rows[1]).toHaveTextContent("Last played");
+    expect(rows[1]).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(rows[2]).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(open).toHaveBeenCalledExactlyOnceWith({
+      source: "/films/Episode 2.mkv",
+      play: "/films/Episode 3.mkv",
+      resume: true,
+    });
   });
 });
