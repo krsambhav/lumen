@@ -61,6 +61,26 @@ test.describe("the panel beside the picture", () => {
     expect((await calls(page, "windowSetPanelWidth")).at(-1)).toMatchObject({ width: 0 });
   });
 
+  test("closing a film with the panel open still lets the next one be seen", async ({ page }) => {
+    // Once, the next film played unseen behind the home screen: the window
+    // never left Home for it.
+    await openQueue(page);
+    await showPlaylist(page);
+    await page.keyboard.press("Meta+w");
+    await expect(page.getByRole("heading", { name: "Drop a file to play" })).toBeVisible();
+    await page.evaluate(
+      (source) => window.__lumenMock?.open({ source, duration: 100, position: 1, paused: true }),
+      EPISODES[1] as string,
+    );
+    await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
+    // The panel is wanted again with the film, and does not slide out on arrival.
+    await expect(page.getByRole("listbox", { name: "Playlist" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Panel" })).not.toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  });
+
   test("has a header as tall as the title bar, with its controls on one line", async ({ page }) => {
     await openQueue(page);
     await showPlaylist(page);

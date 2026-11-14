@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { appActions } from "@/actions/all";
 import { registerActions } from "@/actions/registry";
 import { useGlobalShortcuts } from "@/actions/useGlobalShortcuts";
@@ -106,18 +106,21 @@ export function App() {
   const failure = usePlayer((state) => state.failure);
   const panelWanted = useInterface((state) => state.panelOpen) && open;
   // The panel stays in the window while it slides out (DESIGN.md §5), and
-  // the picture takes its room back as it goes.
-  const [panelLeaving, setPanelLeaving] = useState(false);
-  const [panelWas, setPanelWas] = useState(panelWanted);
-  if (panelWanted !== panelWas) {
-    setPanelWas(panelWanted);
-    // Closed while the film is still open: it is seen out. With the film
-    // gone there is no stage for it to leave.
-    setPanelLeaving(!panelWanted && open);
-  }
-  if (panelLeaving && !open) {
-    setPanelLeaving(false);
-  }
+  // the picture takes its room back as it goes. With the film gone there is
+  // no stage for it to leave.
+  //
+  // Kept in the store, not worked out here with a state updated during
+  // render: such an update, made in the same render as the film closing,
+  // left React's subscription to the player believing a film was still open,
+  // so the next one to open never brought the stage back (the window stayed
+  // on Home with the film playing unseen beneath it).
+  const panelLeaving = useInterface((state) => state.panelLeaving) && open && !panelWanted;
+  const panelLeft = useInterface((state) => state.panelLeft);
+  useEffect(() => {
+    if (!open) {
+      panelLeft();
+    }
+  }, [open, panelLeft]);
   const panel = panelWanted || panelLeaving;
   usePanelRoom(panelWanted);
 
@@ -195,9 +198,7 @@ export function App() {
           >
             <Stage />
           </div>
-          {panel ? (
-            <Inspector leaving={panelLeaving} onLeft={() => setPanelLeaving(false)} />
-          ) : null}
+          {panel ? <Inspector leaving={panelLeaving} onLeft={panelLeft} /> : null}
         </div>
       ) : (
         <div className="flex h-full flex-col bg-bg text-ink-1">

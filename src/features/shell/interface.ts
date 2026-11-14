@@ -18,6 +18,11 @@ interface InterfaceState extends Interface {
    */
   panelOpen: boolean;
   /**
+   * The panel has been closed and is still sliding out (DESIGN.md §5). It
+   * stays in the window until it has gone, then calls `panelLeft`.
+   */
+  panelLeaving: boolean;
+  /**
    * The panel was just opened from the keyboard and has yet to take the
    * keyboard to its list (DESIGN.md §7). The panel clears it when it has.
    */
@@ -26,6 +31,8 @@ interface InterfaceState extends Interface {
   /** Opens the panel, on `tab` if given. */
   showPanel: (tab?: InspectorTab) => void;
   hidePanel: () => void;
+  /** The panel has finished sliding out, or has nowhere to slide out from. */
+  panelLeft: () => void;
   /**
    * Opens the panel on `tab`, or closes it if it is already showing that
    * tab. `byKeyboard` says the request came from a key, so the keyboard
@@ -45,16 +52,25 @@ interface InterfaceState extends Interface {
 export const useInterface = create<InterfaceState>((set, get) => ({
   ...readBoot().session.interface,
   panelOpen: false,
+  panelLeaving: false,
   panelWantsKeyboard: false,
   setTimeRemaining: (timeRemaining) => set({ timeRemaining }),
-  showPanel: (tab) => set({ panelOpen: true, inspectorTab: tab ?? get().inspectorTab }),
-  hidePanel: () => set({ panelOpen: false, panelWantsKeyboard: false }),
+  showPanel: (tab) =>
+    set({ panelOpen: true, panelLeaving: false, inspectorTab: tab ?? get().inspectorTab }),
+  hidePanel: () =>
+    set({ panelOpen: false, panelLeaving: get().panelOpen, panelWantsKeyboard: false }),
+  panelLeft: () => set({ panelLeaving: false }),
   togglePanel: (tab, byKeyboard = false) => {
     const { panelOpen, inspectorTab } = get();
     set(
       panelOpen && inspectorTab === tab
-        ? { panelOpen: false, panelWantsKeyboard: false }
-        : { panelOpen: true, inspectorTab: tab, panelWantsKeyboard: byKeyboard },
+        ? { panelOpen: false, panelLeaving: true, panelWantsKeyboard: false }
+        : {
+            panelOpen: true,
+            panelLeaving: false,
+            inspectorTab: tab,
+            panelWantsKeyboard: byKeyboard,
+          },
     );
   },
   keyboardTaken: () => set({ panelWantsKeyboard: false }),
