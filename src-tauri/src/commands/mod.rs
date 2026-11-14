@@ -14,4 +14,5 @@ pub mod session;
 pub mod settings;
 pub mod sync;
 pub mod torrents;
+pub mod updates;
 pub mod window;

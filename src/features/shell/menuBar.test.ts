@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appActions } from "@/actions/all";
 import { clearActions, registerActions } from "@/actions/registry";
+import { DEFAULT_SETTINGS } from "@/app/boot";
 import { useRecents } from "@/features/library/recents";
 import { useOsd } from "@/features/player/osd";
 import { IDLE_SNAPSHOT, usePlayer } from "@/features/player/store";
 import { useWindowState } from "@/features/player/window";
 import { useSaved } from "@/features/playlist/saved";
 import { EMPTY_QUEUE, useQueue } from "@/features/playlist/store";
+import { resetSettingsForTests, useSettings } from "@/features/settings/store";
+import { useUpdates } from "@/features/updates/store";
 import { commands, type MenuEntry, type Recent } from "@/ipc";
 import {
+  APP_MENU,
   actionsMissingFromTheMenuBar,
+  appMenuItems,
   connectMenuBar,
   MENU_BAR,
   menuSections,
@@ -78,6 +83,8 @@ beforeEach(() => {
   useWindowState.setState({ fullscreen: false, keptOnTop: false });
   useRecents.setState({ entries: [], loaded: true });
   useSaved.setState({ entries: [] });
+  useUpdates.setState({ status: { state: "idle" } });
+  resetSettingsForTests(DEFAULT_SETTINGS);
   useOsd.getState().clear();
   vi.clearAllMocks();
 });
@@ -168,6 +175,62 @@ describe("the menu bar", () => {
       "Subtitles",
       "View",
     ]);
+  });
+
+  it("keeps Check for Updates and its switch in Lumen's own menu, as a Mac app does", () => {
+    expect(APP_MENU).toEqual(["app.update", "app.checkForUpdates", "app.automaticUpdates"]);
+    // None of them is also in a menu of the bar.
+    const inTheBar = menuSections()
+      .flatMap((section) => flat(section.items))
+      .map((entry) => entry.id);
+    expect(inTheBar.filter((id) => APP_MENU.includes(id))).toEqual([]);
+
+    expect(appMenuItems()).toEqual([
+      {
+        kind: "action",
+        id: "app.checkForUpdates",
+        name: "Check for Updates",
+        shortcut: null,
+        enabled: true,
+        checked: null,
+      },
+      {
+        kind: "action",
+        id: "app.automaticUpdates",
+        name: "Check for Updates Automatically",
+        shortcut: null,
+        enabled: true,
+        checked: true,
+      },
+    ]);
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false } },
+    });
+    expect(flat(appMenuItems()).find((entry) => entry.id === "app.automaticUpdates")).toMatchObject(
+      { checked: false },
+    );
+  });
+
+  it("lists the update in Lumen's own menu only while there is one to choose", () => {
+    const first = () => flat(appMenuItems())[0];
+    // Nothing found, or nothing looked for: no standing promise of an update.
+    expect(first()?.id).toBe("app.checkForUpdates");
+    useUpdates.setState({ status: { state: "current", version: "1.4.0" } });
+    expect(first()?.id).toBe("app.checkForUpdates");
+
+    useUpdates.setState({ status: { state: "available", version: "1.5.0", current: "1.4.0" } });
+    expect(first()).toMatchObject({ id: "app.update", name: "Update to 1.5.0", enabled: true });
+
+    // On its way in: there is nothing to choose until it is in place.
+    useUpdates.setState({
+      status: { state: "downloading", version: "1.5.0", received: 10, total: 100 },
+    });
+    expect(first()?.id).toBe("app.checkForUpdates");
+    useUpdates.setState({ status: { state: "installing", version: "1.5.0" } });
+    expect(first()?.id).toBe("app.checkForUpdates");
+
+    useUpdates.setState({ status: { state: "ready", version: "1.5.0" } });
+    expect(first()).toMatchObject({ id: "app.update", name: "Restart to Update", enabled: true });
   });
 
   it("shows each action's name, in the system's title style, and its first shortcut", () => {
@@ -410,7 +473,7 @@ describe("keeping the menu bar in step", () => {
   const sent = () => vi.mocked(commands.menuSet).mock.calls.length;
   /** Whether the menu bar, as last sent, lets an action be chosen. */
   const offered = (id: string) => {
-    const sections = vi.mocked(commands.menuSet).mock.calls.at(-1)?.[0] ?? [];
+    const sections = vi.mocked(commands.menuSet).mock.calls.at(-1)?.[1] ?? [];
     return sections.flatMap((section) => flat(section.items)).find((entry) => entry.id === id)
       ?.enabled;
   };
@@ -434,6 +497,31 @@ describe("keeping the menu bar in step", () => {
     useQueue.setState({ shuffle: false });
     vi.advanceTimersByTime(1000);
     expect(sent()).toBe(2);
+  });
+
+  it("sends Lumen's own menu with the rest, and again when an update is found", async () => {
+    const own = () => flat(vi.mocked(commands.menuSet).mock.calls.at(-1)?.[0] ?? []);
+    const connection = connectMenuBar();
+    await connection.ready;
+    expect(own().map((entry) => entry.id)).toEqual(["app.checkForUpdates", "app.automaticUpdates"]);
+
+    useUpdates.setState({ status: { state: "available", version: "1.5.0", current: "1.4.0" } });
+    vi.advanceTimersByTime(80);
+    expect(sent()).toBe(2);
+    expect(own().map((entry) => entry.id)).toEqual([
+      "app.update",
+      "app.checkForUpdates",
+      "app.automaticUpdates",
+    ]);
+
+    // The switch's tick follows the setting.
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false } },
+    });
+    vi.advanceTimersByTime(80);
+    expect(sent()).toBe(3);
+    expect(own().find((entry) => entry.id === "app.automaticUpdates")?.checked).toBe(false);
+    connection.stop();
   });
 
   it("looks again once a second, not ten times, while only the film's position moves", async () => {

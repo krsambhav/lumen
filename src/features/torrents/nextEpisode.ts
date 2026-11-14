@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { usePlayer } from "@/features/player/store";
 import { commands, type TorrentResult } from "@/ipc";
 import {
   type Episode,
@@ -8,6 +9,7 @@ import {
   nextInSeason,
   searchFor,
 } from "./episode";
+import { byResolution, wantedResolution } from "./quality";
 import { useTorrents } from "./store";
 
 /**
@@ -51,11 +53,23 @@ interface NextEpisodeState {
   dismiss: () => void;
 }
 
-/** The best release of exactly that episode among the results: they come best shared first. */
-function bestOf(results: readonly TorrentResult[], episode: Episode): TorrentResult | null {
-  return (
-    results.find((result) => result.ready !== false && isEpisode(result.name, episode)) ?? null
+/**
+ * The releases of exactly that episode that are ready to play, best first:
+ * in the resolution being watched (1080p if that is not known), and within
+ * it the most shared, as the results come.
+ */
+function playableOf(results: readonly TorrentResult[], episode: Episode): TorrentResult[] {
+  const { video, title } = usePlayer.getState();
+  const wanted = wantedResolution({ height: video?.height, name: title });
+  return byResolution(
+    results.filter((result) => result.ready !== false && isEpisode(result.name, episode)),
+    wanted,
   );
+}
+
+/** The best release of exactly that episode among the results. */
+function bestOf(results: readonly TorrentResult[], episode: Episode): TorrentResult | null {
+  return playableOf(results, episode)[0] ?? null;
 }
 
 async function search(episode: Episode): Promise<TorrentResult | null> {
@@ -84,12 +98,7 @@ export const useNextEpisode = create<NextEpisodeState>((set, get) => ({
       }
       const lookup: Lookup =
         settled.status === "ok"
-          ? {
-              status: "done",
-              results: settled.data.filter(
-                (result) => result.ready !== false && isEpisode(result.name, episode),
-              ),
-            }
+          ? { status: "done", results: playableOf(settled.data, episode) }
           : { status: "failed" };
       set({ lookups: { ...get().lookups, [query]: lookup } });
     });

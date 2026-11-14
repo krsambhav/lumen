@@ -4,6 +4,7 @@ import { playerActions } from "@/features/player/actions";
 import { playlistActions } from "@/features/playlist/actions";
 import { shellActions } from "@/features/shell/actions";
 import { subtitleActions } from "@/features/subtitles/actions";
+import { updateActions } from "@/features/updates/actions";
 import { videoActions } from "@/features/video/actions";
 import type { Action } from "./registry";
 
@@ -16,4 +17,5 @@ export const appActions: readonly Action[] = [
   ...videoActions,
   ...subtitleActions,
   ...shellActions,
+  ...updateActions,
 ];

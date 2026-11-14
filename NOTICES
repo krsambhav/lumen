@@ -102,6 +102,12 @@ Plus Jakarta Sans                          https://github.com/tokotype/PlusJakar
 ================================================
 
 Tauri 2                    MIT or Apache-2.0      https://tauri.app
+Tauri updater plugin       MIT or Apache-2.0      https://github.com/tauri-apps/plugins-workspace
+    Fetches a newer version of Lumen from its releases on GitHub and puts
+    it in the running app's place.
+minisign-verify            MIT                    https://github.com/jedisct1/rust-minisign-verify
+    Checks that a downloaded update carries the signature of Lumen's
+    releases before it is installed.
 tauri-specta, specta       MIT                    https://github.com/specta-rs
 objc2 and framework crates MIT                    https://github.com/madsmtm/objc2
 rusqlite                   MIT                    https://github.com/rusqlite/rusqlite

@@ -99,6 +99,10 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::cast::cast_start,
             commands::cast::cast_airplay,
             commands::cast::cast_stop,
+            commands::updates::update_status,
+            commands::updates::update_check,
+            commands::updates::update_install,
+            commands::updates::update_restart,
         ])
         .events(collect_events![
             events::SettingsChanged,
@@ -115,6 +119,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             events::SubtitleSyncChanged,
             events::CastChanged,
             events::CastFailed,
+            events::UpdateChanged,
         ])
         // Commands resolve to `{ status: "ok", data } | { status: "error", error }`
         // so the UI handles `AppError` as a value with a known shape.

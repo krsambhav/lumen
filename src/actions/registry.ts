@@ -16,7 +16,8 @@ export type ActionCategory =
   | "video"
   | "subtitles"
   | "view"
-  | "window";
+  | "window"
+  | "app";
 
 /** The categories in the order menus and the palette list them, with their names. */
 export const CATEGORIES: readonly { id: ActionCategory; name: string }[] = [
@@ -28,6 +29,9 @@ export const CATEGORIES: readonly { id: ActionCategory; name: string }[] = [
   { id: "subtitles", name: "Subtitles" },
   { id: "view", name: "View" },
   { id: "window", name: "Window" },
+  // About Lumen itself. Last here, though its menu is the first in the bar:
+  // what the palette lists first should be about the film.
+  { id: "app", name: "Lumen" },
 ];
 
 /**

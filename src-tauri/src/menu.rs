@@ -4,7 +4,8 @@
 //! actions: it sends a description (names, shortcuts, what is ticked, what
 //! cannot be done now), this module makes the menus from it, and the
 //! interface is told when an item is chosen. The menus every Mac app has
-//! (the app's own, Edit, Window, Help) are added here.
+//! (the app's own, Edit, Window, Help) are added here; what the interface
+//! has for the app's own menu (Check for Updates) is put in it, under About.
 //!
 //! The shortcuts are real key equivalents, so they look and read as they
 //! should. They do not make the menu bar a second judge of what a key means:
@@ -111,7 +112,7 @@ struct Made {
 
 /// What decides whether the menus must be made again rather than touched up:
 /// which items there are, in what order, and which of them can be ticked.
-fn shape_of(sections: &[MenuSection]) -> String {
+fn shape_of(own: &[MenuEntry], sections: &[MenuSection]) -> String {
     fn list(entries: &[MenuEntry], shape: &mut String) {
         shape.push('[');
         for entry in entries {
@@ -133,6 +134,8 @@ fn shape_of(sections: &[MenuSection]) -> String {
         shape.push(']');
     }
     let mut shape = String::new();
+    // The app's own menu has no name to tell it by: it comes first.
+    list(own, &mut shape);
     for section in sections {
         shape.push_str(&section.name);
         list(&section.items, &mut shape);
@@ -154,19 +157,28 @@ fn actions(entries: &[MenuEntry]) -> Vec<&MenuEntry> {
 }
 
 impl MenuBar {
-    /// Makes the menu bar say what `sections` describes. Only what has
-    /// changed is touched, so a menu that is open stays as it is.
-    pub fn apply(&self, app: &AppHandle, sections: &[MenuSection]) -> AppResult<()> {
+    /// Makes the menu bar say what `sections` describes, with `own` in the
+    /// app's own menu. Only what has changed is touched, so a menu that is
+    /// open stays as it is.
+    pub fn apply(
+        &self,
+        app: &AppHandle,
+        own: &[MenuEntry],
+        sections: &[MenuSection],
+    ) -> AppResult<()> {
         let mut made = self.made.lock();
-        let shape = shape_of(sections);
+        let shape = shape_of(own, sections);
         if made.shape.as_deref() != Some(shape.as_str()) {
-            let (menu, items) = build(app, sections)?;
+            let (menu, items) = build(app, own, sections)?;
             app.set_menu(menu)?;
             made.shape = Some(shape);
             made.items = items;
             return Ok(());
         }
-        for entry in sections.iter().flat_map(|section| actions(&section.items)) {
+        let everywhere = actions(own)
+            .into_iter()
+            .chain(sections.iter().flat_map(|section| actions(&section.items)));
+        for entry in everywhere {
             let MenuEntry::Action {
                 id,
                 name,
@@ -196,10 +208,14 @@ impl MenuBar {
 
 type Items = HashMap<String, (Item, Shown)>;
 
-fn build(app: &AppHandle, sections: &[MenuSection]) -> AppResult<(Menu<Wry>, Items)> {
+fn build(
+    app: &AppHandle,
+    own: &[MenuEntry],
+    sections: &[MenuSection],
+) -> AppResult<(Menu<Wry>, Items)> {
     let mut items = Items::new();
     let menu = Menu::new(app)?;
-    menu.append(&app_menu(app)?)?;
+    menu.append(&app_menu(app, own, &mut items)?)?;
 
     for (index, section) in sections.iter().enumerate() {
         let submenu = Submenu::new(app, &section.name, true)?;
@@ -309,21 +325,27 @@ fn check_item(
     })
 }
 
-fn app_menu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
-    let separator = || PredefinedMenuItem::separator(app);
-    let items: Vec<Box<dyn IsMenuItem<Wry>>> = vec![
-        Box::new(PredefinedMenuItem::about(app, Some("About Lumen"), None)?),
-        Box::new(separator()?),
+/// The app's own menu: the items every Mac app has there, with what the
+/// interface adds (`own`) straight under About, where a Mac app keeps Check
+/// for Updates.
+fn app_menu(app: &AppHandle, own: &[MenuEntry], items: &mut Items) -> AppResult<Submenu<Wry>> {
+    let menu = Submenu::new(app, "Lumen", true)?;
+    menu.append(&PredefinedMenuItem::about(app, Some("About Lumen"), None)?)?;
+    fill(app, &menu, own, items)?;
+    let rest: Vec<Box<dyn IsMenuItem<Wry>>> = vec![
+        Box::new(PredefinedMenuItem::separator(app)?),
         Box::new(PredefinedMenuItem::services(app, None)?),
-        Box::new(separator()?),
+        Box::new(PredefinedMenuItem::separator(app)?),
         Box::new(PredefinedMenuItem::hide(app, Some("Hide Lumen"))?),
         Box::new(PredefinedMenuItem::hide_others(app, None)?),
         Box::new(PredefinedMenuItem::show_all(app, None)?),
-        Box::new(separator()?),
+        Box::new(PredefinedMenuItem::separator(app)?),
         Box::new(PredefinedMenuItem::quit(app, Some("Quit Lumen"))?),
     ];
-    let borrowed: Vec<&dyn IsMenuItem<Wry>> = items.iter().map(AsRef::as_ref).collect();
-    Submenu::with_items(app, "Lumen", true, &borrowed)
+    for item in &rest {
+        menu.append(item.as_ref())?;
+    }
+    Ok(menu)
 }
 
 /// The Edit menu, whose items are the system's own: they are what makes
@@ -379,7 +401,33 @@ mod tests {
             MenuEntry::Separator,
             action("playlist.shuffle", Some(true), true),
         ]);
-        assert_eq!(shape_of(&before), shape_of(&after));
+        assert_eq!(shape_of(&[], &before), shape_of(&[], &after));
+    }
+
+    #[test]
+    fn what_is_in_the_app_s_own_menu_is_part_of_the_shape() {
+        let sections = section(vec![action("playback.toggle", None, true)]);
+        let own = |checked: bool| {
+            vec![
+                action("app.checkForUpdates", None, true),
+                action("app.automaticUpdates", Some(checked), true),
+            ]
+        };
+        // A tick that changes is touched up; an item that comes or goes is not.
+        assert_eq!(
+            shape_of(&own(true), &sections),
+            shape_of(&own(false), &sections)
+        );
+        assert_ne!(shape_of(&own(true), &sections), shape_of(&[], &sections));
+        // The same item in a menu of the bar is not the same menu bar.
+        let moved = section(vec![
+            action("playback.toggle", None, true),
+            action("app.checkForUpdates", None, true),
+        ]);
+        assert_ne!(
+            shape_of(&[action("app.checkForUpdates", None, true)], &sections),
+            shape_of(&[], &moved)
+        );
     }
 
     #[test]
@@ -397,7 +445,7 @@ mod tests {
             action("b", None, true),
         ]);
         for other in [&reordered, &longer, &tickable] {
-            assert_ne!(shape_of(&base), shape_of(other));
+            assert_ne!(shape_of(&[], &base), shape_of(&[], other));
         }
     }
 
@@ -416,13 +464,13 @@ mod tests {
             ])
         };
         // Which of them is ticked is touched up, not rebuilt.
-        assert_eq!(shape_of(&choice(false)), shape_of(&choice(true)));
+        assert_eq!(shape_of(&[], &choice(false)), shape_of(&[], &choice(true)));
         let flat = section(vec![
             action("playback.toggle", None, true),
             action("repeat:off", Some(true), true),
             action("repeat:all", Some(false), true),
         ]);
-        assert_ne!(shape_of(&choice(false)), shape_of(&flat));
+        assert_ne!(shape_of(&[], &choice(false)), shape_of(&[], &flat));
         // Items inside a submenu are kept up to date like any other.
         let sections = choice(true);
         let ids: Vec<&str> = actions(&sections[0].items)

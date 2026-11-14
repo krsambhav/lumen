@@ -3,7 +3,7 @@ use tauri_specta::Event;
 
 use crate::error::AppResult;
 use crate::events::PlayerChanged;
-use crate::menu::MenuSection;
+use crate::menu::{MenuEntry, MenuSection};
 use crate::state::{AppState, Early};
 
 /// Called by a window once its first frame is painted and it is listening
@@ -37,15 +37,17 @@ pub fn app_ready(
 }
 
 /// Makes the menu bar say what the interface describes: the menus that hold
-/// its actions, in order. The app's own menu, Edit, Window and Help are
-/// added around them. Called again whenever a name, a shortcut, a tick or
-/// what is available changes; only what changed is touched.
+/// its actions, in order, and in `own` what it adds to the app's own menu,
+/// under About. The app's own menu, Edit, Window and Help are added around
+/// them. Called again whenever a name, a shortcut, a tick or what is
+/// available changes; only what changed is touched.
 #[tauri::command]
 #[specta::specta]
 pub fn menu_set(
     app: AppHandle,
     state: State<'_, AppState>,
+    own: Vec<MenuEntry>,
     sections: Vec<MenuSection>,
 ) -> AppResult<()> {
-    state.menu.apply(&app, &sections)
+    state.menu.apply(&app, &own, &sections)
 }

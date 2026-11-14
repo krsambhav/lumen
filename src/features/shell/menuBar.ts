@@ -18,6 +18,7 @@ import { openSaved, useSaved } from "@/features/playlist/saved";
 import { useQueue } from "@/features/playlist/store";
 import { useSettings } from "@/features/settings/store";
 import { chooseSubtitles } from "@/features/subtitles/actions";
+import { useUpdates } from "@/features/updates/store";
 import { setAspect, setCrop } from "@/features/video/actions";
 import { RATIOS, sameRatio } from "@/features/video/shape";
 import {
@@ -367,6 +368,25 @@ export const MENU_BAR: readonly { name: string; items: readonly (string | Submen
 ];
 
 /**
+ * What Lumen adds to its own menu, the first in the bar, straight under
+ * About: where a Mac app keeps Check for Updates. The backend puts the items
+ * every app has there (Services, Hide, Quit) around them.
+ */
+export const APP_MENU: readonly string[] = [
+  "app.update",
+  "app.checkForUpdates",
+  "app.automaticUpdates",
+];
+
+/**
+ * Items of the app's own menu that are listed only while they can be chosen.
+ * Everywhere else in the bar an item that cannot be chosen now is dimmed in
+ * its place, so that it is always found there; but "Update Lumen" with
+ * nothing to update to, most of the time, would be a standing false promise.
+ */
+const ONLY_WHEN_POSSIBLE: readonly string[] = ["app.update"];
+
+/**
  * Actions that have no item of their own in the menu bar, and why. Escape
  * leaves full screen, which the item for full screen in View already does.
  * The key that steps through the repeat modes has the Repeat submenu, which
@@ -450,6 +470,15 @@ export function menuSections(): MenuSection[] {
   return MENU_BAR.map((menu) => ({ name: menu.name, items: entries(menu.items) }));
 }
 
+/** What Lumen's own menu holds, under About, right now. */
+export function appMenuItems(): MenuEntry[] {
+  return entries(
+    APP_MENU.filter(
+      (id) => !ONLY_WHEN_POSSIBLE.includes(id) || getAction(id)?.unavailable?.() === undefined,
+    ),
+  );
+}
+
 /** Everything in the menus' submenus, as they stand right now. */
 function submenuItems(): Item[] {
   return MENU_BAR.flatMap((menu) =>
@@ -519,12 +548,13 @@ export function connectMenuBar(): Subscription {
   const send = () => {
     clearTimeout(slow);
     slow = undefined;
+    const own = appMenuItems();
     const sections = menuSections();
-    const next = JSON.stringify(sections);
+    const next = JSON.stringify([own, sections]);
     if (next !== sent) {
       sent = next;
       // A menu bar that cannot be made is not worth interrupting anyone for; the keys still work.
-      void commands.menuSet(sections);
+      void commands.menuSet(own, sections);
     }
   };
   const later = () => {
@@ -538,8 +568,8 @@ export function connectMenuBar(): Subscription {
   // Everything an action's name, tick or availability can depend on.
   const unsubscribes = [
     usePlayer.subscribe((now, before) => (onlyTimeMoved(now, before) ? eventually() : later())),
-    ...[useQueue, useWindowState, useInterface, useRecents, useSaved, useSettings].map((store) =>
-      store.subscribe(later),
+    ...[useQueue, useWindowState, useInterface, useRecents, useSaved, useSettings, useUpdates].map(
+      (store) => store.subscribe(later),
     ),
   ];
 
@@ -558,7 +588,7 @@ export function connectMenuBar(): Subscription {
 
 /** The id of every action the menu bar has an item for, in a menu or in a submenu of one. */
 export function placedActions(): string[] {
-  const top = MENU_BAR.flatMap((menu) => menu.items);
+  const top = [...APP_MENU, ...MENU_BAR.flatMap((menu) => menu.items)];
   return [...top, ...submenuItems()]
     .map((item) => (typeof item === "string" ? item : "submenu" in item ? "-" : item.id))
     .filter((id) => id !== "-" && getAction(id) !== undefined);

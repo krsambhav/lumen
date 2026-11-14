@@ -20,10 +20,28 @@ use crate::error::AppResult;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
+    pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
     pub video: VideoSettings,
     pub audio: AudioSettings,
     pub subtitles: SubtitleSettings,
+}
+
+/// How Lumen itself behaves, whatever is playing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneralSettings {
+    /// Look for a newer version of Lumen by itself, when it opens and now
+    /// and then while it is open. Nothing is fetched until it is asked for.
+    pub check_for_updates: bool,
+}
+
+impl Default for GeneralSettings {
+    fn default() -> Self {
+        Self {
+            check_for_updates: true,
+        }
+    }
 }
 
 /// The picture tuner, and the adjustments saved from it by name.
@@ -163,6 +181,7 @@ impl Default for AccentChoice {
 impl Settings {
     pub fn load(db: &Db) -> AppResult<Self> {
         Ok(Self {
+            general: load_section(db, "general")?,
             appearance: load_section(db, "appearance")?,
             video: load_section(db, "video")?,
             audio: load_section(db, "audio")?,
@@ -173,6 +192,7 @@ impl Settings {
 
     #[cfg(test)]
     pub fn save(&self, db: &Db) -> AppResult<()> {
+        save_section(db, "general", &self.general)?;
         save_section(db, "appearance", &self.appearance)?;
         save_section(db, "video", &self.video)?;
         save_section(db, "audio", &self.audio)?;
@@ -183,6 +203,9 @@ impl Settings {
     /// being dragged changes one section many times a second; the others
     /// are not written again each time.
     pub fn save_changes(&self, db: &Db, before: &Self) -> AppResult<()> {
+        if self.general != before.general {
+            save_section(db, "general", &self.general)?;
+        }
         if self.appearance != before.appearance {
             save_section(db, "appearance", &self.appearance)?;
         }
@@ -342,11 +365,29 @@ mod tests {
     }
 
     #[test]
+    fn looks_for_updates_by_itself_until_told_not_to() {
+        let db = Db::in_memory().unwrap();
+        let before = Settings::load(&db).unwrap();
+        assert!(before.general.check_for_updates);
+
+        let mut settings = before.clone();
+        settings.general.check_for_updates = false;
+        settings.save_changes(&db, &before).unwrap();
+        assert!(!Settings::load(&db).unwrap().general.check_for_updates);
+        // Only that section was written.
+        let rows: i64 = db
+            .read(|conn| conn.query_row("SELECT count(*) FROM settings", [], |row| row.get(0)))
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
     fn round_trips_through_the_database() {
         let db = Db::in_memory().unwrap();
         let mut settings = Settings::default();
         settings.appearance.theme = ThemeMode::Light;
         settings.appearance.accent = AccentChoice::Custom { hue: 245.0 };
+        settings.general.check_for_updates = false;
         settings.save(&db).unwrap();
         settings.save(&db).unwrap(); // upsert, not a second row
         assert_eq!(Settings::load(&db).unwrap(), settings);

@@ -46,6 +46,15 @@ describe("reading an episode from a name", () => {
     expect(searchFor(nextInSeason(playing))).toBe("MobLand S02E10");
     expect(searchFor(firstOfNextSeason(playing))).toBe("MobLand S03E01");
   });
+
+  it("leaves a year after the show's name out of the search, unless it is the name", () => {
+    const at = (show: string) => searchFor({ show, season: 2, episode: 7 });
+    expect(at("The Americans (2013)")).toBe("The Americans S02E07");
+    expect(at("The Americans 2013")).toBe("The Americans S02E07");
+    expect(at("Doctor Who [2005]")).toBe("Doctor Who S02E07");
+    expect(at("1883")).toBe("1883 S02E07");
+    expect(at("Blade Runner 2049 Black Lotus")).toBe("Blade Runner 2049 Black Lotus S02E07");
+  });
 });
 
 describe("matching a release to the episode wanted", () => {

@@ -15,6 +15,14 @@ Tauri 2 (Rust) with a React 18 interface. Playback is libmpv, rendered in a nati
 
 macOS remembers the choice; from then on Lumen opens like any other app. If macOS instead says the app "is damaged", it was quarantined on download: run `xattr -dr com.apple.quarantine /Applications/Lumen.app` in Terminal once, then open it.
 
+### Updates
+
+From 0.2.7 on, Lumen updates itself. It looks at this repository's [latest release](../../releases/latest) a few seconds after it opens and every six hours while it stays open; when there is a newer version, the home screen's title bar says so ("Update to 0.2.8"), and one click downloads it, checks its signature, puts it in place and reopens Lumen. Nothing is downloaded until you ask, an update found while a film plays is never announced over it, and one installed while a film plays waits for you to restart (or simply opens next time).
+
+**Lumen ▸ Check for Updates** looks now and always answers; **Check for Updates Automatically** in the same menu turns the looking off. Both are in the command palette (⌘K) too. Looking is one request to github.com and sends nothing about you or what you play.
+
+Versions before 0.2.7 cannot update themselves: install 0.2.7 or later from the disk image once, as above. Updating needs Lumen to be in a folder it can be replaced in, such as Applications; a copy opened straight from the disk image will say so.
+
 ## Requirements (to build from source)
 
 - macOS 12 or later, Apple silicon or Intel
@@ -73,8 +81,27 @@ The browser tests need Playwright's browsers once: `pnpm exec playwright install
 | `http://localhost:1420/#mock-film` | The same, with a film with chapters already open and paused |
 | `http://localhost:1420/#mock-queue` | The same, with a playlist of five open |
 | `http://localhost:1420/#mock-history` | The home screen once things have been played (`#mock-history-3` for three of them) |
+| `http://localhost:1420/#mock-update` | The home screen with a newer version of Lumen found |
 
-On the simulated backend, `window.__lumenMock` opens and fails pretend films, builds playlists and history, and records every command the page sends.
+On the simulated backend, `window.__lumenMock` opens and fails pretend films, builds playlists and history, finds and installs pretend updates, and records every command the page sends.
+
+## Releasing
+
+A release is made with `scripts/release.sh`, not with `pnpm tauri build` by hand, because of what the updater needs from it:
+
+```sh
+# after setting the new version in package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml
+scripts/release.sh build              # Lumen.app, the disk image, the signed archive and latest.json
+scripts/release.sh install            # optional: put the build in /Applications and open it
+git commit, git push                  # the release is of a commit that is on GitHub
+scripts/release.sh publish NOTES.md   # tag it, and publish the release with all four files
+```
+
+Each release carries four files: the disk image for a first install, `Lumen_<version>_aarch64.app.tar.gz` (the app, as the updater installs it), that archive's `.sig`, and `latest.json`, which names the newest version and where its archive is. Every installed Lumen reads `releases/latest/download/latest.json`, so a release published without it is one nobody is told about, and the release marked "latest" on GitHub must always have it.
+
+Updates are signed with a key that is **not** in this repository. The script reads it from `~/.tauri/lumen-updater.key` (or the file named in `LUMEN_UPDATER_KEY`); its public half is in `src-tauri/tauri.conf.json`, and an installed Lumen accepts only archives signed with it. Keep a copy of the key somewhere safe: without it, copies already installed can never be updated again, and each would have to be reinstalled from a disk image built with a new key. Plain `pnpm tauri build` stops at the end with "no private key" for the same reason; for a build that is not a release, leave the archive out: `pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'`.
+
+To try the updater without publishing anything, a debug build reads `LUMEN_UPDATE_ENDPOINT` (the address of a `latest.json` of your own, which may be `http://127.0.0.1:…`) in place of the one on GitHub. It only ever installs into an app bundle: run from `target/debug`, it looks and reports but refuses to install.
 
 ## Layout
 

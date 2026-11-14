@@ -18,6 +18,8 @@ pub use macos::scroll::{watch_scrolling, Scroll};
 #[cfg(target_os = "macos")]
 pub use macos::video_surface::VideoSurface;
 #[cfg(target_os = "macos")]
+pub use macos::volumes::is_on_read_only_volume;
+#[cfg(target_os = "macos")]
 pub use macos::web_view::tab_reaches_every_control;
 #[cfg(target_os = "macos")]
 pub use macos::window::{
@@ -27,6 +29,11 @@ pub use macos::window::{
 };
 #[cfg(all(target_os = "macos", debug_assertions))]
 pub use macos::window::{traffic_light_origin, traffic_light_state};
+
+#[cfg(not(target_os = "macos"))]
+pub fn is_on_read_only_volume(_path: &std::path::Path) -> bool {
+    false
+}
 
 #[cfg(not(target_os = "macos"))]
 pub fn set_window_background(_window: &tauri::WebviewWindow, _dark: bool) {}

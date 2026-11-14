@@ -32,6 +32,7 @@ const root = createRoot(container);
  *   #mock-queue    the same, with a playlist of five open, the second playing
  *   #mock-history  the same, with nothing open and things played before
  *                  (#mock-history-24 for that many, to fill the window)
+ *   #mock-update   the same, with a newer version of Lumen found
  */
 async function start() {
   const fragment = window.location.hash;
@@ -78,6 +79,9 @@ async function start() {
         ],
         { paused: true, at: 600 },
       );
+    }
+    if (fragment.includes("update")) {
+      mock.findUpdate("1.5.0");
     }
     const many = /history-(\d+)/.exec(fragment);
     if (many) {

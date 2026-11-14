@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PlayGlyph } from "@/components/ui/glyphs";
+import { Meter, Sweep } from "@/components/ui/meter";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Shortcut } from "@/components/ui/shortcut";
 import { usePalette } from "@/features/palette/store";
@@ -131,57 +132,6 @@ function Note({
         <CircleAlert aria-hidden="true" className="mt-0.5 size-4 flex-none text-danger" />
       ) : null}
       <span className="min-w-0 break-words">{children}</span>
-    </div>
-  );
-}
-
-/** A needle that travels a hairline, for work of unknown length (DESIGN.md §5). */
-function Sweep({ className }: { className?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) {
-      return;
-    }
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    observer.observe(element);
-    setWidth(element.clientWidth);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <span ref={ref} aria-hidden="true" className={cn("relative block h-3.5", className)}>
-      <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line-strong" />
-      <span
-        className="absolute left-0 top-0 h-full w-0.5 animate-sweep rounded-xs bg-accent"
-        style={{ "--sweep": `${Math.max(0, width - 2)}px` } as React.CSSProperties}
-      />
-    </span>
-  );
-}
-
-/** How far a fetch has come, as the scale and needle every level in Lumen is shown by. */
-function Meter({ value, label }: { value: number; label: string }) {
-  const share = Math.min(100, Math.max(0, value));
-  return (
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(share)}
-      aria-valuetext={`${Math.round(share)}%`}
-      className="relative h-3.5"
-    >
-      <span className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-xs bg-line-strong" />
-      <span
-        className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-xs bg-ink-1 transition-[width] duration-base ease-out"
-        style={{ width: `${share}%` }}
-      />
-      <span
-        className="absolute top-0 h-full w-0.5 rounded-xs bg-accent transition-[left] duration-base ease-out"
-        style={{ left: `calc(${share}% - ${(share / 100) * 2}px)` }}
-      />
     </div>
   );
 }

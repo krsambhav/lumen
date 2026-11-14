@@ -75,11 +75,15 @@ export function dismissFrontToast(): boolean {
  * The same failure repeated, as it would be while a slider is dragged,
  * updates the one toast instead of stacking another.
  */
-export function notifyFailure(what: string, error: AppError): void {
+export function notifyFailure(what: string, error: AppError, id?: string): void {
   const title = `Lumen could not ${what}`;
   toast.error(title, {
-    id: `${title}|${error.message}`,
+    // Under an id of the caller's, the failure takes the place of what that
+    // toast was saying, and a later attempt can take the failure's.
+    id: id ?? `${title}|${error.message}`,
     description: explain(error),
+    // Whatever the toast it replaces was offering is no longer on offer.
+    action: undefined,
     // A failure is not said on a timer: it stays until it is closed (DESIGN.md §7).
     duration: Number.POSITIVE_INFINITY,
   });

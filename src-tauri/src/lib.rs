@@ -24,6 +24,7 @@ mod settings;
 mod state;
 mod sync;
 mod torrents;
+mod updates;
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -42,7 +43,7 @@ use crate::engine::types::{DynamicRange, PlaybackStatus, PlayerChange};
 use crate::error::{AppError, AppResult};
 use crate::events::{
     CastChanged, CastFailed, DynamicRangeChanged, FullscreenChanged, HistoryChanged, MenuAction,
-    PlaybackSkipped, PlayerChanged, PosterReady, QueueChanged, SubtitleSyncChanged,
+    PlaybackSkipped, PlayerChanged, PosterReady, QueueChanged, SubtitleSyncChanged, UpdateChanged,
 };
 use crate::library::posters::Posters;
 use crate::platform::geometry::reserved_share;
@@ -85,6 +86,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(ipc.invoke_handler())
         .setup(move |app| {
             ipc.mount_events(app);
@@ -210,6 +212,16 @@ fn setup(app: &AppHandle) -> AppResult<()> {
     );
     app.manage(caster);
     app.manage(torrents::Torrents::default());
+    let updates = updates::Updates::new(app.clone(), {
+        let app = app.clone();
+        Arc::new(move |status| {
+            if let Err(error) = UpdateChanged(status).emit(&app) {
+                tracing::warn!(%error, "could not say how the update stands");
+            }
+        })
+    });
+    updates.watch();
+    app.manage(updates);
     app.manage(AppState::new(
         db,
         settings.clone(),
@@ -222,7 +234,7 @@ fn setup(app: &AppHandle) -> AppResult<()> {
 
     // The menus every Mac app has, until the interface says what goes
     // between them; and word to the interface when one of its items is chosen.
-    if let Err(error) = app.state::<AppState>().menu.apply(app, &[]) {
+    if let Err(error) = app.state::<AppState>().menu.apply(app, &[], &[]) {
         tracing::warn!(%error, "could not make the menu bar");
     }
     app.on_menu_event(|app, event| {
@@ -741,6 +753,14 @@ fn create_main_window(
 pub(crate) fn apply_settings(app: &AppHandle, settings: &Settings, before: Option<&Settings>) {
     if before.is_none_or(|before| before.appearance != settings.appearance) {
         apply_appearance(app, settings);
+    }
+    // Asked to look for updates by itself from now on: it looks now.
+    if before.is_some_and(|before| !before.general.check_for_updates)
+        && settings.general.check_for_updates
+    {
+        if let Some(updates) = app.try_state::<Arc<updates::Updates>>() {
+            updates.look_soon();
+        }
     }
     let Some(state) = app.try_state::<AppState>() else {
         return;

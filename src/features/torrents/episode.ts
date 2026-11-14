@@ -46,9 +46,20 @@ export function episodeOf(title: string | null | undefined): Episode | null {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** The search for an episode: "MobLand S02E10". */
+/** A year after a show's name: "The Americans (2013)", "Doctor Who 2005". */
+const TRAILING_YEAR = /[\s([]*\b(19|20)\d{2}\b[)\]]*$/;
+
+/**
+ * The search for an episode: "MobLand S02E10". A year after the show's name
+ * is left out ("The Americans (2013)" is searched as "The Americans"): the
+ * index takes every word as required, and most releases do not carry the
+ * year, so with it a search finds only the few that do. Releases are still
+ * matched to the show with or without one (see `isEpisode`). A show whose
+ * name is a year ("1883") keeps it.
+ */
 export function searchFor(episode: Episode): string {
-  return `${episode.show} S${two(episode.season)}E${two(episode.episode)}`;
+  const show = episode.show.replace(TRAILING_YEAR, "").trim() || episode.show;
+  return `${show} S${two(episode.season)}E${two(episode.episode)}`;
 }
 
 /** The episode after this one, in the same season. */

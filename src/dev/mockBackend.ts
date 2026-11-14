@@ -32,10 +32,15 @@ import type {
   TorrentFile,
   TorrentResult,
   Track,
+  UpdateStatus,
 } from "@/ipc";
 import { mockCommands } from "@/ipc/bindings";
 
 const TICK_MS = 100;
+/** The version the pretend Lumen is. */
+export const MOCK_VERSION = "1.4.0";
+/** How large a pretend update is, in bytes. */
+const UPDATE_SIZE = 41_250_000;
 /** How long a pretend film runs unless the test says otherwise: 2:01:45. */
 const FILM_LENGTH = 7305;
 
@@ -222,6 +227,17 @@ export interface LumenMock {
    * this message. Each step of it takes `step` ms (default 120).
    */
   sync: { speed: number; delay: number; step?: number } | { fails: string; step?: number };
+  /**
+   * Lumen's own updates. `latest` is the newest version published; `null`
+   * means none newer than the one running. A pretend download takes six
+   * steps of `step` ms (default 80), says its size unless `sized` is false,
+   * and ends with the failure in `fails` if there is one.
+   */
+  update: { latest: string | null; step?: number; sized?: boolean; fails?: AppError };
+  /** As the backend does when it finds a newer version by itself. */
+  findUpdate: (version: string) => void;
+  /** Says how the update stands, as the backend does at each step of one. */
+  sayUpdate: (status: UpdateStatus) => void;
 }
 
 declare global {
@@ -600,6 +616,43 @@ export function installMockBackend(): LumenMock {
     return saved.get(id)?.playlist;
   }
 
+  // Lumen's own updates: nobody has looked yet.
+  let update: UpdateStatus = { state: "idle" };
+  function sayUpdate(next: UpdateStatus) {
+    update = next;
+    void emit("update-changed", next);
+  }
+  /** Fetches and installs the version that was found, a step at a time, as the backend says it. */
+  function runUpdate(available: Extract<UpdateStatus, { state: "available" }>) {
+    const { version } = available;
+    const step = mock.update.step ?? 80;
+    const total = mock.update.sized === false ? null : UPDATE_SIZE;
+    const shares = [0, 0.12, 0.37, 0.61, 0.84, 1];
+    return new Promise<UpdateStatus>((resolve, reject) => {
+      shares.forEach((share, index) => {
+        setTimeout(
+          () => sayUpdate({ state: "downloading", version, received: share * UPDATE_SIZE, total }),
+          index * step,
+        );
+      });
+      setTimeout(() => {
+        const failure = mock.update.fails;
+        if (failure !== undefined) {
+          // What was found is still there to be asked for again.
+          sayUpdate(available);
+          reject(failure);
+          return;
+        }
+        sayUpdate({ state: "installing", version });
+        setTimeout(() => {
+          const ready: UpdateStatus = { state: "ready", version };
+          sayUpdate(ready);
+          resolve(ready);
+        }, step);
+      }, shares.length * step);
+    });
+  }
+
   const refusals = new Map<string, AppError>();
 
   function record<T>(command: string, args: unknown, result: T): T {
@@ -684,6 +737,9 @@ export function installMockBackend(): LumenMock {
     panelWidth: 0,
     lengths: {},
     sync: { speed: 1, delay: -2.35 },
+    update: { latest: null },
+    findUpdate: (version) => sayUpdate({ state: "available", version, current: MOCK_VERSION }),
+    sayUpdate,
     snapshot: () => player,
     queue: queueSnapshot,
   };
@@ -1326,6 +1382,35 @@ export function installMockBackend(): LumenMock {
       return added.length;
     },
     torrentsDownload: (args) => record("torrentsDownload", args, null),
+    updateStatus: () => update,
+    updateCheck: () => {
+      record("updateCheck", null, null);
+      // What is on its way in, or in place, is the answer: as the backend has it.
+      if (update.state === "downloading" || update.state === "installing") {
+        return update;
+      }
+      if (update.state === "ready") {
+        return update;
+      }
+      const { latest } = mock.update;
+      const next: UpdateStatus =
+        latest === null
+          ? { state: "current", version: MOCK_VERSION }
+          : { state: "available", version: latest, current: MOCK_VERSION };
+      sayUpdate(next);
+      return next;
+    },
+    updateInstall: () => {
+      record("updateInstall", null, null);
+      if (update.state === "ready") {
+        return update;
+      }
+      if (update.state !== "available") {
+        throw { kind: "invalid", message: "no newer version has been found" } as AppError;
+      }
+      return runUpdate(update);
+    },
+    updateRestart: () => record("updateRestart", null, null),
     windowSetBackdropBlur: (args) => record("windowSetBackdropBlur", args, null),
   });
 

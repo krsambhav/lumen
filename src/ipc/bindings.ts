@@ -17,11 +17,12 @@ export const commands = {
 	appReady: (options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("app_ready", undefined, options)),
 	/**
 	 *  Makes the menu bar say what the interface describes: the menus that hold
-	 *  its actions, in order. The app's own menu, Edit, Window and Help are
-	 *  added around them. Called again whenever a name, a shortcut, a tick or
-	 *  what is available changes; only what changed is touched.
+	 *  its actions, in order, and in `own` what it adds to the app's own menu,
+	 *  under About. The app's own menu, Edit, Window and Help are added around
+	 *  them. Called again whenever a name, a shortcut, a tick or what is
+	 *  available changes; only what changed is touched.
 	 */
-	menuSet: (sections: MenuSection[], options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("menu_set", { sections }, options)),
+	menuSet: (own: MenuEntry[], sections: MenuSection[], options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("menu_set", { own, sections }, options)),
 	settingsGet: (options?: InvokeOptions) => __TAURI_INVOKE<Settings>("settings_get", undefined, options),
 	/**
 	 *  Replaces the settings, persists them, applies their side effects and tells
@@ -282,6 +283,24 @@ export const commands = {
 	castAirplay: (anchor: Anchor, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_airplay", { anchor }, options)),
 	/**  Stops casting; the Mac takes over, paused where the TV was. */
 	castStop: (options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_stop", undefined, options)),
+	/**
+	 *  How Lumen stands against its newest release. Call once on start-up;
+	 *  after that, follow `UpdateChanged` events.
+	 */
+	updateStatus: (options?: InvokeOptions) => __TAURI_INVOKE<UpdateStatus>("update_status", undefined, options),
+	/**
+	 *  Looks for a newer version now, because the user asked. Returns how
+	 *  things stand afterwards; a failure to look is the error.
+	 */
+	updateCheck: (options?: InvokeOptions) => typedError<UpdateStatus, AppError>(__TAURI_INVOKE("update_check", undefined, options)),
+	/**
+	 *  Fetches the newer version that was found and puts it in place. Returns
+	 *  once it is there (or could not be); how it goes meanwhile is said in
+	 *  `UpdateChanged` events.
+	 */
+	updateInstall: (options?: InvokeOptions) => typedError<UpdateStatus, AppError>(__TAURI_INVOKE("update_install", undefined, options)),
+	/**  Closes Lumen and opens the version that was put in place. */
+	updateRestart: (options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("update_restart", undefined, options)),
 };
 
 /** Events */
@@ -300,6 +319,7 @@ export const events = {
 	scrolled: makeEvent<Scrolled, Scrolled>("scrolled"),
 	settingsChanged: makeEvent<SettingsChanged, SettingsChanged>("settings-changed"),
 	subtitleSyncChanged: makeEvent<SubtitleSyncChanged, SubtitleSyncChanged>("subtitle-sync-changed"),
+	updateChanged: makeEvent<UpdateChanged, UpdateChanged>("update-changed"),
 };
 
 /* Types */
@@ -505,6 +525,15 @@ export type FileState = {
  *  button, or a Mission Control gesture.
  */
 export type FullscreenChanged = boolean;
+
+/**  How Lumen itself behaves, whatever is playing. */
+export type GeneralSettings = {
+	/**
+	 *  Look for a newer version of Lumen by itself, when it opens and now
+	 *  and then while it is open. Nothing is fetched until it is asked for.
+	 */
+	checkForUpdates: boolean,
+};
 
 /**
  *  What has been played is not what it was: something was opened, forgotten
@@ -847,6 +876,7 @@ export type Session = {
 };
 
 export type Settings = {
+	general: GeneralSettings,
 	appearance: AppearanceSettings,
 	video: VideoSettings,
 	audio: AudioSettings,
@@ -1029,6 +1059,30 @@ export type Track = {
 
 export type TrackKind = "video" | "audio" | "subtitle";
 
+/**
+ *  How Lumen stands against its newest release changed: a newer version was
+ *  found, is arriving, or is in place.
+ */
+export type UpdateChanged = UpdateStatus;
+
+/**  How Lumen stands against its newest release. */
+export type UpdateStatus = 
+/**  Nobody has looked since Lumen opened. */
+{ state: "idle" } | 
+/**  The version running is the newest there is. */
+{ state: "current"; version: string } | 
+/**  A newer version is published. `current` is the one running. */
+{ state: "available"; version: string; current: string } | 
+/**
+ *  It is being fetched. `total` is its size in bytes, when the server
+ *  says.
+ */
+{ state: "downloading"; version: string; received: number; total: number | null } | 
+/**  It has arrived whole and signed, and is being put in place. */
+{ state: "installing"; version: string } | 
+/**  It is in place: the next time Lumen opens, it is this version. */
+{ state: "ready"; version: string };
+
 export type VideoInfo = {
 	/**  Display size in pixels, after aspect correction and rotation. */
 	width: number,
@@ -1086,7 +1140,7 @@ function makeEvent<TListen, TEmit = TListen>(name: string, serialize?: (payload:
 /** A handler for each generated command, keyed by its `commands` accessor. */
 export type MockCommandHandlers = {
     appReady: () => null | Promise<null>,
-    menuSet: (args: { sections: MenuSection[] }) => null | Promise<null>,
+    menuSet: (args: { own: MenuEntry[]; sections: MenuSection[] }) => null | Promise<null>,
     settingsGet: () => Settings | Promise<Settings>,
     settingsSet: (args: { settings: Settings }) => null | Promise<null>,
     windowSetChromeVisible: (args: { visible: boolean }) => null | Promise<null>,
@@ -1160,6 +1214,10 @@ export type MockCommandHandlers = {
     castStart: (args: { device: string; anchor: Anchor }) => null | Promise<null>,
     castAirplay: (args: { anchor: Anchor }) => null | Promise<null>,
     castStop: () => null | Promise<null>,
+    updateStatus: () => UpdateStatus | Promise<UpdateStatus>,
+    updateCheck: () => UpdateStatus | Promise<UpdateStatus>,
+    updateInstall: () => UpdateStatus | Promise<UpdateStatus>,
+    updateRestart: () => null | Promise<null>,
 };
 
 /**
@@ -1261,6 +1319,10 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "cast_start": return mockCommandHandler(mockHandlers.castStart, "cast_start", args);
             case "cast_airplay": return mockCommandHandler(mockHandlers.castAirplay, "cast_airplay", args);
             case "cast_stop": return mockCommandHandler(mockHandlers.castStop, "cast_stop", args);
+            case "update_status": return mockCommandHandler(mockHandlers.updateStatus, "update_status", args);
+            case "update_check": return mockCommandHandler(mockHandlers.updateCheck, "update_check", args);
+            case "update_install": return mockCommandHandler(mockHandlers.updateInstall, "update_install", args);
+            case "update_restart": return mockCommandHandler(mockHandlers.updateRestart, "update_restart", args);
             default: throw new Error(`No mock handler registered for command '${cmd}'`);
         }
     }, { shouldMockEvents: true });

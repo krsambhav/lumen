@@ -14,6 +14,7 @@ use crate::playlist::queue::QueueSnapshot;
 use crate::playlist::saved::SavedPlaylist;
 use crate::settings::Settings;
 use crate::sync::SyncStatus;
+use crate::updates::UpdateStatus;
 
 /// Settings changed, in this window or another one.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
@@ -114,3 +115,8 @@ pub struct CastChanged(pub CastSnapshot);
 /// Casting failed or ended on the device's account: what to tell the user.
 #[derive(Debug, Clone, Serialize, Type, Event)]
 pub struct CastFailed(pub String);
+
+/// How Lumen stands against its newest release changed: a newer version was
+/// found, is arriving, or is in place.
+#[derive(Debug, Clone, Serialize, Type, Event)]
+pub struct UpdateChanged(pub UpdateStatus);

@@ -29,6 +29,8 @@ import { TitleBar } from "@/features/shell/TitleBar";
 import { useFileDrop } from "@/features/shell/useFileDrop";
 import { usePasteToOpen } from "@/features/shell/usePasteToOpen";
 import { connectSubtitleSync } from "@/features/subtitles/sync";
+import { connectUpdates } from "@/features/updates/store";
+import { UpdateControl } from "@/features/updates/UpdateControl";
 import { commands } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { dismissFrontToast } from "@/lib/notify";
@@ -142,6 +144,7 @@ export function App() {
       connectScrollGestures(),
       connectSubtitleSync(),
       connectCast(),
+      connectUpdates(),
     ];
     const forget = rememberInterface();
     let stopped = false;
@@ -202,7 +205,7 @@ export function App() {
         </div>
       ) : (
         <div className="flex h-full flex-col bg-bg text-ink-1">
-          <TitleBar title="Lumen" />
+          <TitleBar title="Lumen" actions={<UpdateControl />} />
           <Home dropping={dropping !== null} failure={failure} />
         </div>
       )}
