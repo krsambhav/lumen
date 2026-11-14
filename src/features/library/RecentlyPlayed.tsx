@@ -1,15 +1,15 @@
+import { ListVideo } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { runAction } from "@/actions/registry";
 import { Button } from "@/components/ui/button";
 import { ContextMenuArea, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
-import { openSources } from "@/features/playlist/actions";
 import { nameOf } from "@/features/shell/failure";
 import { commands, type Recent } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { notifyFailure, send, undoable } from "@/lib/notify";
 import { shortDuration } from "@/lib/timecode";
-import { useRecents } from "./recents";
+import { playRecent, useRecents } from "./recents";
 import { readTitle } from "./title";
 
 /** A tile is never narrower than this (DESIGN.md §7, "Home, with history"). */
@@ -20,6 +20,13 @@ const ROWS = 2;
 const MOST_COLUMNS = 6;
 /** Shown before the grid has been measured, and where it cannot be (tests). */
 const UNMEASURED_COLUMNS = 5;
+
+/** Where it stood in the playlist it was played in: "3 of 8", or `null` if it was played alone. */
+export function placeInPlaylist(entry: Recent): string | null {
+  const items = entry.playlist?.items ?? [];
+  const at = items.findIndex((item) => item.source === entry.source);
+  return items.length > 1 && at >= 0 ? `${at + 1} of ${items.length}` : null;
+}
 
 /** Forgets that something was played, with a toast that can undo it. */
 export function forgetRecent(entry: Recent): void {
@@ -72,17 +79,18 @@ function about(entry: Recent): string {
 function Tile({ entry }: { entry: Recent }) {
   const through = progress(entry);
   const { name, episode } = readTitle(entry.title);
+  const place = placeInPlaylist(entry);
   const local = !entry.source.includes("://");
   return (
     <ContextMenuArea
       menu={
         entry.available ? (
           <>
-            <MenuItem onSelect={() => openSources([entry.source])}>
+            <MenuItem onSelect={() => playRecent(entry.source)}>
               {through === null ? "Play" : "Resume"}
             </MenuItem>
             {through === null ? null : (
-              <MenuItem onSelect={() => openSources([entry.source], false)}>
+              <MenuItem onSelect={() => playRecent(entry.source, false)}>
                 Play from the beginning
               </MenuItem>
             )}
@@ -106,7 +114,7 @@ function Tile({ entry }: { entry: Recent }) {
     >
       <button
         type="button"
-        onClick={() => openSources([entry.source])}
+        onClick={() => playRecent(entry.source)}
         onKeyDown={(event) => {
           if (event.key === "Delete" || event.key === "Backspace") {
             event.preventDefault();
@@ -181,8 +189,14 @@ function Tile({ entry }: { entry: Recent }) {
             className={cn("font-medium", entry.available ? "text-ink-1" : "text-ink-2")}
           />
           {/* Keeps its line even when there is nothing to say, so titles in a row share a baseline. */}
-          <span className="tabular min-h-4 truncate text-caption text-ink-2">
-            {episode ? `${episode} · ${about(entry)}` : about(entry)}
+          <span className="tabular flex min-h-4 min-w-0 items-center gap-1 text-caption text-ink-2">
+            {/* Played in a playlist: opening it brings the playlist back, so it says where in it. */}
+            {place ? (
+              <ListVideo aria-hidden="true" className="size-3 flex-none text-ink-3" />
+            ) : null}
+            <span className="min-w-0 truncate">
+              {[episode, place, about(entry)].filter(Boolean).join(" · ")}
+            </span>
           </span>
         </span>
       </button>

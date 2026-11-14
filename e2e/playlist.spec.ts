@@ -723,8 +723,8 @@ test.describe("the panel's colours and its going", () => {
     await expect(panel).toHaveCount(0);
     // Opened again before it has gone, it simply stays.
     await showPlaylist(page);
-    await page.keyboard.press("Meta+Shift+p");
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press("Meta+p");
+    await page.keyboard.press("Meta+p");
     await expect(page.getByRole("listbox", { name: "Playlist" })).toBeVisible();
     await settle(page);
     expect((await calls(page, "windowSetPanelWidth")).at(-1)).toMatchObject({ width: PANEL });

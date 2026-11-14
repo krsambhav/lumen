@@ -13,6 +13,7 @@ function played(name: string, playedAt: number): Recent {
     finished: false,
     playedAt,
     state: null,
+    playlist: null,
     available: true,
     poster: null,
     resumesAt: null,

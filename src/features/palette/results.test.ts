@@ -50,6 +50,7 @@ function recent(title: string, extra: Partial<Recent> = {}): Recent {
     finished: false,
     playedAt: 1,
     state: null,
+    playlist: null,
     available: true,
     poster: null,
     resumesAt: null,

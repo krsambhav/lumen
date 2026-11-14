@@ -33,6 +33,19 @@ pub async fn playlist_open(
     state.conductor.open(&sources, resume)
 }
 
+/// Opens something from Recently played: one played in a playlist brings
+/// the whole playlist back and plays that item of it; anything else opens
+/// alone. From where it was left if `resume` is set.
+#[tauri::command]
+#[specta::specta]
+pub async fn playlist_open_recent(
+    state: State<'_, AppState>,
+    source: String,
+    resume: bool,
+) -> AppResult<()> {
+    state.conductor.open_recent(&source, resume)
+}
+
 /// True if `sources` are all files of subtitles and something is open for
 /// them to belong to. Dropped on the window or chosen in the open panel,
 /// they are added to what is playing; they are not something to play.

@@ -47,6 +47,7 @@ vi.mock("@/ipc", async (original) => {
       playerSetSpeed: vi.fn(async () => ({ status: "ok", data: null })),
       playlistSetRepeat: vi.fn(async () => ({ status: "ok", data: null })),
       playlistOpen: vi.fn(async () => ({ status: "ok", data: null })),
+      playlistOpenRecent: vi.fn(async () => ({ status: "ok", data: null })),
       playlistsOpen: vi.fn(async () => ({ status: "ok", data: null })),
       playerTogglePaused: vi.fn(async () => ({ status: "ok", data: null })),
     },
@@ -61,6 +62,7 @@ function played(index: number, over: Partial<Recent> = {}): Recent {
     duration: 5400,
     playedAt: 1_000 - index,
     state: null,
+    playlist: null,
     finished: false,
     available: true,
     poster: null,
@@ -335,14 +337,15 @@ describe("the menu bar's submenus", () => {
     });
 
     runMenuItem("recent:0");
-    expect(commands.playlistOpen).toHaveBeenCalledWith(["/films/Film 1.mkv"], true);
+    // Through Recently played's own way in, which brings back a playlist whole.
+    expect(commands.playlistOpenRecent).toHaveBeenCalledWith("/films/Film 1.mkv", true);
   });
 
   it("dims a film that is no longer where it was, and does not try to open it", () => {
     useRecents.setState({ entries: [played(1, { available: false })] });
     expect(item("recent:0").enabled).toBe(false);
     runMenuItem("recent:0");
-    expect(commands.playlistOpen).not.toHaveBeenCalled();
+    expect(commands.playlistOpenRecent).not.toHaveBeenCalled();
   });
 
   it("keeps Open Recent when nothing has been played, with only its dimmed way to clear it", () => {

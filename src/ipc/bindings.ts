@@ -196,6 +196,12 @@ export const commands = {
 	playlistsDelete: (id: number, options?: InvokeOptions) => typedError<boolean, AppError>(__TAURI_INVOKE("playlists_delete", { id }, options)),
 	/**  Brings back a playlist deleted since the last launch. */
 	playlistsUndelete: (id: number, options?: InvokeOptions) => typedError<SavedPlaylist, AppError>(__TAURI_INVOKE("playlists_undelete", { id }, options)),
+	/**
+	 *  Opens something from Recently played: one played in a playlist brings
+	 *  the whole playlist back and plays that item of it; anything else opens
+	 *  alone. From where it was left if `resume` is set.
+	 */
+	playlistOpenRecent: (source: string, resume: boolean, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("playlist_open_recent", { source, resume }, options)),
 	/**  What was played most recently, newest first. */
 	historyRecent: (limit: number, options?: InvokeOptions) => typedError<Recent[], AppError>(__TAURI_INVOKE("history_recent", { limit }, options)),
 	/**  Forgets that something was played. Returns whether it was remembered. */
@@ -524,6 +530,8 @@ export type HistoryEntry = {
 	 *  delays, how its picture was shaped. `None` when nothing was.
 	 */
 	state: FileState | null,
+	/**  The playlist it was last played in, if it was not played alone. */
+	playlist: PlayedIn | null,
 };
 
 export type InspectorTab = "playlist" | "chapters" | "video" | "audio" | "subtitles";
@@ -607,6 +615,28 @@ export type PlaybackStatus =
 "buffering" | 
 /**  The last file played to its end and is still open on its last frame. */
 "ended";
+
+/**
+ *  A playlist as it stood when one of its items was played: enough to
+ *  bring the whole of it back from Recently played.
+ */
+export type PlayedIn = {
+	/**
+	 *  Names this playlist across its items: the same for every item played
+	 *  in one opening of it, and for a saved playlist every time it is opened.
+	 */
+	key: string,
+	/**  The saved playlist's name, if it is one. */
+	name: string | null,
+	items: PlayedItem[],
+};
+
+/**  One item of a playlist that was played. */
+export type PlayedItem = {
+	source: string,
+	title: string,
+	duration: number | null,
+};
 
 /**  One change to the snapshot. */
 export type PlayerChange = { type: "status"; status: PlaybackStatus } | 
@@ -1107,6 +1137,7 @@ export type MockCommandHandlers = {
     playlistsRename: (args: { id: number; name: string }) => SavedPlaylist | Promise<SavedPlaylist>,
     playlistsDelete: (args: { id: number }) => boolean | Promise<boolean>,
     playlistsUndelete: (args: { id: number }) => SavedPlaylist | Promise<SavedPlaylist>,
+    playlistOpenRecent: (args: { source: string; resume: boolean }) => null | Promise<null>,
     historyRecent: (args: { limit: number }) => Recent[] | Promise<Recent[]>,
     historyForget: (args: { source: string }) => boolean | Promise<boolean>,
     historyRestore: (args: { entry: HistoryEntry }) => null | Promise<null>,
@@ -1207,6 +1238,7 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "playlists_rename": return mockCommandHandler(mockHandlers.playlistsRename, "playlists_rename", args);
             case "playlists_delete": return mockCommandHandler(mockHandlers.playlistsDelete, "playlists_delete", args);
             case "playlists_undelete": return mockCommandHandler(mockHandlers.playlistsUndelete, "playlists_undelete", args);
+            case "playlist_open_recent": return mockCommandHandler(mockHandlers.playlistOpenRecent, "playlist_open_recent", args);
             case "history_recent": return mockCommandHandler(mockHandlers.historyRecent, "history_recent", args);
             case "history_forget": return mockCommandHandler(mockHandlers.historyForget, "history_forget", args);
             case "history_restore": return mockCommandHandler(mockHandlers.historyRestore, "history_restore", args);

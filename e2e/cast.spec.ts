@@ -40,7 +40,9 @@ test.describe("casting", () => {
     await expect(menu.getByRole("menuitemcheckbox", { name: /Den/ })).toBeVisible();
     // A speaker has no picture: not offered for a film.
     await expect(menu.getByRole("menuitemcheckbox", { name: /Kitchen/ })).toHaveCount(0);
-    const names = await menu.locator("[role=menuitem], [role=menuitemcheckbox], .label").allTextContents();
+    const names = await menu
+      .locator("[role=menuitem], [role=menuitemcheckbox], .label")
+      .allTextContents();
     const shown = names.map((name) => name.replace(/\s+/g, " ").trim());
     // Chromecasts under their label, then AirPlay devices under theirs, then the system's picker.
     expect(shown[0]).toBe("Chromecast");

@@ -905,7 +905,7 @@ fn a_title_from_a_playlist_file_is_passed_to_the_player() {
 #[test]
 fn lengths_are_looked_up_in_the_background_from_the_history_first() {
     let db = Arc::new(Db::in_memory().unwrap());
-    history::opened(&db, A, "a", 1).unwrap();
+    history::opened(&db, A, "a", None, 1).unwrap();
     history::progressed(&db, A, 10.0, Some(TWO_HOURS), None, 2).unwrap();
     let asked = Arc::new(Mutex::new(Vec::new()));
     let prober: Prober = {
@@ -957,4 +957,70 @@ fn the_interface_hears_that_a_file_ended_before_it_hears_what_came_next() {
     // When the change went on to the interface, the next file had not been asked for yet.
     assert_eq!(*opened_when_passed.lock(), Some(1));
     assert_eq!(rig.opened().len(), 2);
+}
+
+#[test]
+fn a_playlist_is_one_entry_in_recently_played_and_comes_back_whole() {
+    let rig = Rig::new();
+    rig.conductor.open(&all(&[A, B, C]), true).unwrap();
+    rig.loads(A, Some(120.0));
+    rig.at(119.0);
+    rig.status(PlaybackStatus::Ended);
+    rig.time.store(2_000, Ordering::Release);
+    rig.loads(B, Some(TWO_HOURS));
+    rig.at(600.0);
+    rig.status(PlaybackStatus::Paused);
+
+    // Both items know the playlist they were played in, under one key.
+    let a = rig.remembered(A).unwrap().playlist.expect("played in a playlist");
+    let b = rig.remembered(B).unwrap().playlist.expect("played in a playlist");
+    assert_eq!(a.key, b.key);
+    let sources: Vec<_> = b.items.iter().map(|item| item.source.as_str()).collect();
+    assert_eq!(sources, [A, B, C]);
+    // Recently played lists the playlist once, by the item played last.
+    let recent = history::recent(&rig.db, 10).unwrap();
+    assert_eq!(recent.len(), 1);
+    assert_eq!(recent[0].source, B);
+
+    // Opened again from there, the whole playlist is back, at that item, where it was left.
+    rig.conductor.close().unwrap();
+    rig.goes_idle();
+    rig.conductor.open_recent(B, true).unwrap();
+    assert_eq!(rig.titles(), ["a", "b", "c"]);
+    assert_eq!(rig.current().as_deref(), Some("b"));
+    assert!(matches!(
+        rig.last_open(),
+        Call::Open { source, start: Some(start), .. } if source == B && start > 590.0
+    ));
+    // And it goes on being the same playlist in the history.
+    rig.loads(B, Some(TWO_HOURS));
+    assert_eq!(rig.remembered(B).unwrap().playlist.unwrap().key, a.key);
+    assert_eq!(history::recent(&rig.db, 10).unwrap().len(), 1);
+}
+
+#[test]
+fn something_played_alone_opens_alone_from_recently_played() {
+    let rig = Rig::new();
+    rig.conductor.open(&all(&[A]), true).unwrap();
+    rig.loads(A, Some(TWO_HOURS));
+    assert_eq!(rig.remembered(A).unwrap().playlist, None);
+    rig.conductor.open_recent(A, false).unwrap();
+    assert_eq!(rig.titles(), ["a"]);
+}
+
+#[test]
+fn a_saved_playlist_is_the_same_playlist_in_the_history_every_time() {
+    let rig = Rig::new();
+    rig.conductor.open(&all(&[A, B]), true).unwrap();
+    let saved = rig.conductor.save_as("Evening", false).unwrap();
+    rig.conductor.open_saved(saved.id).unwrap();
+    rig.loads(A, Some(TWO_HOURS));
+    let first = rig.remembered(A).unwrap().playlist.unwrap();
+    assert_eq!(first.name.as_deref(), Some("Evening"));
+    rig.conductor.open_saved(saved.id).unwrap();
+    rig.loads(A, Some(TWO_HOURS));
+    assert_eq!(rig.remembered(A).unwrap().playlist.unwrap().key, first.key);
+    // From Recently played it comes back under its name.
+    rig.conductor.open_recent(A, true).unwrap();
+    assert_eq!(rig.conductor.snapshot().name.as_deref(), Some("Evening"));
 }

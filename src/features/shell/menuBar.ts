@@ -1,7 +1,7 @@
 import { allActions, getAction, runAction } from "@/actions/registry";
 import { isTauri } from "@/app/boot";
 import { chooseAudio } from "@/features/audio/actions";
-import { useRecents } from "@/features/library/recents";
+import { playRecent, useRecents } from "@/features/library/recents";
 import { needsMedia, setSpeed } from "@/features/player/actions";
 import { formatSpeed, isNormalSpeed, nearestSpeed, SPEEDS } from "@/features/player/speed";
 import { usePlayer } from "@/features/player/store";
@@ -13,7 +13,7 @@ import {
   tracksOf,
 } from "@/features/player/tracks";
 import { useWindowState } from "@/features/player/window";
-import { openSources, REPEAT_CHOICES, setRepeat } from "@/features/playlist/actions";
+import { REPEAT_CHOICES, setRepeat } from "@/features/playlist/actions";
 import { openSaved, useSaved } from "@/features/playlist/saved";
 import { useQueue } from "@/features/playlist/store";
 import { useSettings } from "@/features/settings/store";
@@ -83,7 +83,7 @@ function recentItems(): Item[] {
     name: shortened(entry.title),
     verbatim: true,
     enabled: entry.available,
-    run: () => openSources([entry.source]),
+    run: () => playRecent(entry.source),
   }));
   return recents.length > 0 ? [...items, "-", "history.clear"] : ["history.clear"];
 }

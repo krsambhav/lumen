@@ -7,6 +7,7 @@ import {
   GUTTER,
   openHistory,
   openHome,
+  openQueue,
   overlap,
   settle,
   tabTo,
@@ -405,10 +406,28 @@ test.describe("home, once something has been played", () => {
     expect(await calls(page, "playlistsOpen")).toHaveLength(1);
   });
 
+  test("keeps a playlist as one tile, and brings the whole of it back", async ({ page }) => {
+    await openQueue(page);
+    await page.getByRole("button", { name: "Next item" }).click();
+    await page.keyboard.press("Meta+.");
+    const region = page.getByRole("region", { name: "Recently played" });
+    await expect(region).toBeVisible();
+    // Two episodes were played, and the playlist is listed once, by the last.
+    const tiles = region.getByRole("button").filter({ hasNotText: /^Clear$/ });
+    await expect(tiles).toHaveCount(1);
+    await expect(tiles.first()).toContainText("2 of 5");
+
+    await tiles.first().click();
+    await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
+    const queue = await page.evaluate(() => window.__lumenMock?.queue());
+    expect(queue?.items).toHaveLength(5);
+    expect(queue?.items.findIndex((item) => item.id === queue.current)).toBe(1);
+  });
+
   test("plays a tile from where it was left, and says so", async ({ page }) => {
     await openHistory(page);
     await page.getByRole("button", { name: /The Long Take/ }).click();
-    expect(await calls(page, "playlistOpen")).toEqual([{ sources: [FILM], resume: true }]);
+    expect(await calls(page, "playlistOpenRecent")).toEqual([{ source: FILM, resume: true }]);
     await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
     // In a toast, which can offer the other choice; the on-screen display could not.
     const toast = page.locator("[data-sonner-toast]");
@@ -441,8 +460,8 @@ test.describe("home, once something has been played", () => {
 
     await page.getByRole("button", { name: /Solaris/ }).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Play from the beginning" }).click();
-    expect((await calls(page, "playlistOpen")).at(-1)).toEqual({
-      sources: ["/Users/me/Films/Solaris (1972).mkv"],
+    expect((await calls(page, "playlistOpenRecent")).at(-1)).toEqual({
+      source: "/Users/me/Films/Solaris (1972).mkv",
       resume: false,
     });
   });

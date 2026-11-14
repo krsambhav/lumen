@@ -31,6 +31,7 @@ const PLAYED: Recent = {
   finished: false,
   playedAt: 1,
   state: null,
+  playlist: null,
   available: true,
   poster: "asset://localhost/a.jpg",
   resumesAt: 97,
@@ -169,6 +170,7 @@ describe("clearing what was played", () => {
         finished: false,
         playedAt: 1,
         state: null,
+        playlist: null,
       },
     });
   });

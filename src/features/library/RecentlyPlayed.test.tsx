@@ -20,6 +20,7 @@ function entry(title: string, extra: Partial<Recent> = {}): Recent {
     finished: false,
     playedAt: 1,
     state: null,
+    playlist: null,
     available: true,
     poster: null,
     resumesAt: null,
@@ -37,7 +38,7 @@ const A_CLIP = entry("Clip.mp4", { duration: 20, position: 4 });
 const GONE = entry("Moved.mkv", { available: false });
 const STREAM = entry("A lecture", { source: "https://example.com/a", duration: null });
 
-const open = vi.fn((_: { sources: string[]; resume: boolean }) => null);
+const open = vi.fn((_: { source: string; resume: boolean }) => null);
 const forget = vi.fn((_: { source: string }) => true);
 const restore = vi.fn((_: { entry: unknown }) => null);
 
@@ -46,7 +47,7 @@ beforeEach(() => {
   forget.mockClear();
   restore.mockClear();
   mockCommands({
-    playlistOpen: open,
+    playlistOpenRecent: open,
     historyForget: forget,
     historyRestore: restore,
     historyRecent: () => useRecents.getState().entries,
@@ -139,7 +140,7 @@ describe("recently played", () => {
     show();
     await userEvent.click(tile("The Long Take"));
     expect(open).toHaveBeenCalledWith({
-      sources: ["/films/The Long Take (2019).mkv"],
+      source: "/films/The Long Take (2019).mkv",
       resume: true,
     });
   });
@@ -150,7 +151,7 @@ describe("recently played", () => {
     expect(screen.getByRole("menuitem", { name: "Resume" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("menuitem", { name: "Play from the beginning" }));
     expect(open).toHaveBeenCalledWith({
-      sources: ["/films/The Long Take (2019).mkv"],
+      source: "/films/The Long Take (2019).mkv",
       resume: false,
     });
 
@@ -199,6 +200,7 @@ describe("recently played", () => {
         finished: false,
         playedAt: 1,
         state: null,
+        playlist: null,
       },
     });
   });
@@ -283,5 +285,21 @@ describe("posters", () => {
       ),
     );
     connection.stop();
+  });
+
+  it("shows something played in a playlist once, saying where in it, and brings the playlist back", async () => {
+    const items = ["Episode 1.mkv", "Episode 2.mkv", "Episode 3.mkv"].map((title) => ({
+      source: `/films/${title}`,
+      title,
+      duration: 2700,
+    }));
+    useRecents.setState({
+      entries: [entry("Episode 2.mkv", { playlist: { key: "1-0", name: null, items } })],
+      loaded: true,
+    });
+    show();
+    expect(tile("Episode 2")).toHaveTextContent("2 of 3");
+    await userEvent.click(tile("Episode 2"));
+    expect(open).toHaveBeenCalledWith({ source: "/films/Episode 2.mkv", resume: true });
   });
 });

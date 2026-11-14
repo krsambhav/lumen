@@ -115,7 +115,7 @@ export async function settle(page: Page) {
 
 /** Opens the panel beside the picture on the playlist, from its key. */
 export async function showPlaylist(page: Page) {
-  await page.keyboard.press("Meta+Shift+p");
+  await page.keyboard.press("Meta+p");
   await expect(page.getByRole("listbox", { name: "Playlist" })).toBeVisible();
   await settle(page);
 }

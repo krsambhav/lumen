@@ -19,6 +19,7 @@ import type {
   Chapter,
   FailureReason,
   HistoryEntry,
+  PlayedIn,
   PlayerChange,
   PlayerSnapshot,
   QueueItem,
@@ -266,6 +267,9 @@ export function installMockBackend(): LumenMock {
   let current: number | null = null;
   /** The saved playlist the queue is, if it is one: it has that one's name. */
   let queueKept: number | null = null;
+  /** What the history knows the queue by, as the backend's conductor keeps it. */
+  let queueKey: string | null = null;
+  let openings = 0;
   let repeat: QueueSnapshot["repeat"] = "off";
   let shuffle = false;
   let nextId = 1;
@@ -414,6 +418,23 @@ export function installMockBackend(): LumenMock {
     }));
   }
 
+  /** The playlist what is playing is part of, as the backend records it; `null` when it plays alone. */
+  function playedIn(): PlayedIn | null {
+    if (items.length < 2) {
+      return null;
+    }
+    queueKey ??= queueKept === null ? `mock-${++openings}` : `saved:${queueKept}`;
+    return {
+      key: queueKey,
+      name: queueName(),
+      items: items.map((item) => ({
+        source: item.source,
+        title: item.title,
+        duration: item.duration,
+      })),
+    };
+  }
+
   function remember(source: string, title: string) {
     const known = history.find((entry) => entry.source === source);
     clock += 60;
@@ -426,6 +447,7 @@ export function installMockBackend(): LumenMock {
         finished: known?.finished ?? false,
         playedAt: clock,
         state: known?.state ?? null,
+        playlist: playedIn(),
         available: true,
         poster: known?.poster ?? null,
         resumesAt: known?.resumesAt ?? null,
@@ -530,6 +552,7 @@ export function installMockBackend(): LumenMock {
     items = makeItems(sources);
     current = items[0]?.id ?? null;
     queueKept = null;
+    queueKey = null;
     announce();
     const first = items[0];
     if (first) {
@@ -619,6 +642,7 @@ export function installMockBackend(): LumenMock {
           finished: false,
           playedAt: clock - index * 3600,
           state: null,
+          playlist: null,
           available: true,
           poster: null,
           ...given,
@@ -955,6 +979,32 @@ export function installMockBackend(): LumenMock {
       }
       return null;
     },
+    playlistOpenRecent: (args) => {
+      record("playlistOpenRecent", args, null);
+      const known = history.find((entry) => entry.source === args.source);
+      const at =
+        args.resume && known && !known.finished && known.position >= 10 ? known.position - 3 : 0;
+      const playlist = known?.playlist;
+      if (!playlist?.items.some((item) => item.source === args.source)) {
+        startQueue([args.source], at > 0 ? { position: at } : {});
+      } else {
+        items = makeItems(playlist.items.map((item) => item.source));
+        queueKept = playlist.key.startsWith("saved:") ? Number(playlist.key.slice(6)) : null;
+        queueKey = playlist.key;
+        const chosen = items.find((item) => item.source === args.source) as QueueItem;
+        current = chosen.id;
+        announce();
+        load({
+          source: chosen.source,
+          duration: chosen.duration ?? FILM_LENGTH,
+          ...(at > 0 ? { position: at } : {}),
+        });
+      }
+      if (at > 0) {
+        change({ type: "resumed", seconds: at });
+      }
+      return null;
+    },
     playlistOpenDialog: (args) => {
       record("playlistOpenDialog", args, true);
       startQueue(args.folder ? FOLDER : ["/Users/me/Films/The Long Take (2019).mkv"]);
@@ -1131,11 +1181,32 @@ export function installMockBackend(): LumenMock {
       announceSaved();
       return playlist;
     },
-    historyRecent: (args) => record("historyRecent", args, history.slice(0, args.limit)),
+    historyRecent: (args) => {
+      // A playlist is listed once, by the item played last, as the backend does.
+      const seen = new Set<string>();
+      const listed = history.filter((entry) => {
+        const key = entry.playlist?.key;
+        if (key === undefined) {
+          return true;
+        }
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+      return record("historyRecent", args, listed.slice(0, args.limit));
+    },
     historyForget: (args) => {
-      const had = history.some((entry) => entry.source === args.source);
+      const gone = history.find((entry) => entry.source === args.source);
+      const had = gone !== undefined;
       const forgotten = record("historyForget", args, had);
-      history = history.filter((entry) => entry.source !== args.source);
+      // A playlist is forgotten whole.
+      const key = gone?.playlist?.key;
+      history = history.filter(
+        (entry) =>
+          entry.source !== args.source && (key === undefined || entry.playlist?.key !== key),
+      );
       if (had) {
         announceHistory();
       }

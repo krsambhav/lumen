@@ -78,6 +78,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::playlist::playlists_rename,
             commands::playlist::playlists_delete,
             commands::playlist::playlists_undelete,
+            commands::playlist::playlist_open_recent,
             commands::history::history_recent,
             commands::history::history_forget,
             commands::history::history_restore,

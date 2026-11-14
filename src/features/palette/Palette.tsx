@@ -4,7 +4,7 @@ import { Dialog } from "radix-ui";
 import { useEffect, useMemo, useState } from "react";
 import { allActions, runAction } from "@/actions/registry";
 import { Shortcut } from "@/components/ui/shortcut";
-import { useRecents } from "@/features/library/recents";
+import { playRecent, useRecents } from "@/features/library/recents";
 import { goTo, goToChapter, setSpeed } from "@/features/player/actions";
 import { useChromeHold } from "@/features/player/chrome";
 import { currentPosition, hasMedia, usePlayer } from "@/features/player/store";
@@ -31,7 +31,7 @@ const RUNNERS: PaletteRunners = {
   playItem: (id) => send("play that", commands.playlistPlay(id)),
   chapter: (index) => goToChapter(FROM_PALETTE, index),
   openSaved: (id) => send("open that playlist", commands.playlistsOpen(id)),
-  openRecent: (source) => openSources([source]),
+  openRecent: (source) => playRecent(source),
   openAddress: (address) => openSources([address]),
   addAddress: (address) => send("add that to the playlist", commands.playlistAdd([address], null)),
 };

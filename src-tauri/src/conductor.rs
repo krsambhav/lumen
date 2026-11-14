@@ -165,6 +165,47 @@ struct State {
     probed: HashSet<u32>,
     /// What the player was last told about playing round and round.
     looping: bool,
+    /// What the history knows this queue by, so every item played in it is
+    /// recorded as part of the one playlist. Made when first needed, and
+    /// given up when the queue is replaced or emptied.
+    playlist_key: Option<String>,
+}
+
+/// How the history names a saved playlist: by its id, so it is the same
+/// playlist every time it is opened.
+const SAVED_KEY: &str = "saved:";
+
+/// Tells apart playlists opened within the same second.
+static OPENINGS: AtomicU64 = AtomicU64::new(0);
+
+impl State {
+    /// The playlist what is playing is part of, for the history; `None`
+    /// when it plays alone.
+    fn played_in(&mut self, now: i64) -> Option<history::PlayedIn> {
+        if self.queue.len() < 2 {
+            return None;
+        }
+        let key = self
+            .playlist_key
+            .get_or_insert_with(|| {
+                format!("{now}-{}", OPENINGS.fetch_add(1, Ordering::Relaxed))
+            })
+            .clone();
+        Some(history::PlayedIn {
+            key,
+            name: self.queue.snapshot().name,
+            items: self
+                .queue
+                .items()
+                .iter()
+                .map(|item| history::PlayedItem {
+                    source: item.source.clone(),
+                    title: item.title.clone(),
+                    duration: item.duration,
+                })
+                .collect(),
+        })
+    }
 }
 
 /// What to do once the lock is released.
@@ -213,6 +254,7 @@ impl Conductor {
                 barren: 0,
                 probed: HashSet::new(),
                 looping: false,
+                playlist_key: None,
             }),
             probing: AtomicU64::new(0),
             me: me.clone(),
@@ -243,6 +285,40 @@ impl Conductor {
             });
         }
         self.replace(entries.into_iter().map(incoming).collect(), None, resume)
+    }
+
+    /// Opens something from Recently played. One that was played in a
+    /// playlist brings the whole playlist back, as it stood, and plays that
+    /// item of it (where it was left if `resume` is set); anything else
+    /// opens alone, as `open` would.
+    pub fn open_recent(&self, source: &str, resume: bool) -> AppResult<()> {
+        let playlist = history::find(&self.db, source)?
+            .and_then(|entry| entry.playlist)
+            .filter(|playlist| playlist.items.iter().any(|item| item.source == source));
+        let Some(playlist) = playlist else {
+            return self.open(&[source.to_owned()], resume);
+        };
+        // A saved playlist comes back as itself, if it is still saved.
+        let kept = playlist
+            .key
+            .strip_prefix(SAVED_KEY)
+            .and_then(|id| id.parse::<u32>().ok())
+            .and_then(|id| {
+                saved::name_of(&self.db, id)
+                    .ok()
+                    .flatten()
+                    .map(|name| (id, name))
+            });
+        let incoming = playlist
+            .items
+            .into_iter()
+            .map(|item| Incoming {
+                source: item.source,
+                title: item.title,
+                duration: item.duration,
+            })
+            .collect();
+        self.replace_at(incoming, kept, resume, Some(playlist.key), Some(source))
     }
 
     /// Replaces the queue with addresses whose names are already known (a
@@ -319,13 +395,41 @@ impl Conductor {
         kept: Option<(u32, String)>,
         resume: bool,
     ) -> AppResult<()> {
+        // A saved playlist is the same playlist in the history every time.
+        let key = kept.as_ref().map(|(id, _)| format!("{SAVED_KEY}{id}"));
+        self.replace_at(incoming, kept, resume, key, None)
+    }
+
+    /// Makes `incoming` the queue, known to the history as `key` (a new
+    /// playlist when `None`), and plays the item whose source is `start`,
+    /// or the first.
+    fn replace_at(
+        &self,
+        incoming: Vec<Incoming>,
+        kept: Option<(u32, String)>,
+        resume: bool,
+        key: Option<String>,
+        start: Option<&str>,
+    ) -> AppResult<()> {
         let first = {
             let mut state = self.state.lock();
             state.probed.clear();
             state.barren = 0;
-            let first = state.queue.set(incoming);
+            state.playlist_key = key;
+            let mut first = state.queue.set(incoming);
             if let Some((id, name)) = kept {
                 state.queue.keep_as(id, name);
+            }
+            let chosen = start.and_then(|start| {
+                state
+                    .queue
+                    .items()
+                    .iter()
+                    .find(|item| item.source == start)
+                    .map(|item| item.id)
+            });
+            if let Some(chosen) = chosen.filter(|chosen| state.queue.select(*chosen)) {
+                first = Some(chosen);
             }
             first
         };
@@ -463,6 +567,7 @@ impl Conductor {
             self.write_down(&mut state);
             state.queue.clear();
             state.probed.clear();
+            state.playlist_key = None;
         }
         self.announce();
         self.deck.stop()
@@ -541,17 +646,20 @@ impl Conductor {
         let mut notices = Vec::new();
         {
             let mut state = self.state.lock();
+            let now = (self.clock)();
             match change {
                 PlayerChange::Media {
                     source: Some(source),
                     title,
-                } => match state.watch.as_mut() {
+                } => match state.watch.as_ref().map(|watch| watch.source == *source) {
                     // The same file under a better name: a stream's own title.
-                    Some(watch) if watch.source == *source => {
+                    Some(true) => {
+                        let played_in = state.played_in(now);
+                        let watch = state.watch.as_mut().expect("matched above");
                         if let Some(title) = title.as_ref().filter(|title| **title != watch.title) {
                             watch.title.clone_from(title);
                             if watch.loaded {
-                                self.note_opened(watch, &mut notices);
+                                self.note_opened(watch, played_in.as_ref(), &mut notices);
                             }
                         }
                     }
@@ -567,6 +675,7 @@ impl Conductor {
                     state.watch = None;
                     // With nothing open there is no queue: the window is
                     // showing the home screen.
+                    state.playlist_key = None;
                     if !state.queue.is_empty() {
                         state.queue.clear();
                         state.probed.clear();
@@ -680,12 +789,13 @@ impl Conductor {
                 | PlaybackStatus::Buffering
                 | PlaybackStatus::Ended
         );
-        if open {
-            if let Some(watch) = state.watch.as_mut().filter(|watch| !watch.loaded) {
+        if open && state.watch.as_ref().is_some_and(|watch| !watch.loaded) {
+            let played_in = state.played_in((self.clock)());
+            if let Some(watch) = state.watch.as_mut() {
                 watch.loaded = true;
                 // Only now is it in the history: a file that never opened was
                 // never played.
-                self.note_opened(watch, notices);
+                self.note_opened(watch, played_in.as_ref(), notices);
             }
         }
         match status {
@@ -763,8 +873,19 @@ impl Conductor {
 
     /// Writes to the history that `watch` was opened, and has the interface
     /// told: whatever lists what was played is out of date from now.
-    fn note_opened(&self, watch: &Watch, notices: &mut Vec<Notice>) {
-        match history::opened(&self.db, &watch.source, &watch.title, (self.clock)()) {
+    fn note_opened(
+        &self,
+        watch: &Watch,
+        played_in: Option<&history::PlayedIn>,
+        notices: &mut Vec<Notice>,
+    ) {
+        match history::opened(
+            &self.db,
+            &watch.source,
+            &watch.title,
+            played_in,
+            (self.clock)(),
+        ) {
             Ok(()) => notices.push(Notice::Played),
             Err(error) => tracing::warn!(%error, "could not add to the play history"),
         }

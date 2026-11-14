@@ -42,6 +42,31 @@ pub struct HistoryEntry {
     /// What was chosen for it the last time it was open: its tracks, its
     /// delays, how its picture was shaped. `None` when nothing was.
     pub state: Option<FileState>,
+    /// The playlist it was last played in, if it was not played alone.
+    pub playlist: Option<PlayedIn>,
+}
+
+/// A playlist as it stood when one of its items was played: enough to
+/// bring the whole of it back from Recently played.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayedIn {
+    /// Names this playlist across its items: the same for every item played
+    /// in one opening of it, and for a saved playlist every time it is opened.
+    pub key: String,
+    /// The saved playlist's name, if it is one.
+    pub name: Option<String>,
+    pub items: Vec<PlayedItem>,
+}
+
+/// One item of a playlist that was played.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayedItem {
+    pub source: String,
+    pub title: String,
+    #[specta(type = Option<Number>)]
+    pub duration: Option<f64>,
 }
 
 /// A history entry as the home screen shows it.
@@ -115,10 +140,19 @@ fn entry(row: &Row) -> rusqlite::Result<HistoryEntry> {
         state: row
             .get::<_, Option<String>>(6)?
             .and_then(|json| read_state(&json)),
+        // One that does not read is as good as none: the file comes back alone.
+        playlist: row
+            .get::<_, Option<String>>(7)?
+            .and_then(|json| serde_json::from_str::<PlayedIn>(&json).ok())
+            .filter(|playlist| playlist.items.len() > 1),
     })
 }
 
-const COLUMNS: &str = "source, title, duration, position, finished, played_at, state";
+const COLUMNS: &str = "source, title, duration, position, finished, played_at, state, playlist";
+
+fn stored_playlist(playlist: Option<&PlayedIn>) -> Option<String> {
+    playlist.and_then(|playlist| serde_json::to_string(playlist).ok())
+}
 
 /// Reads a stored state. It is laid over the defaults, as the settings
 /// are, so one written before a field existed still reads; one that does
@@ -141,14 +175,21 @@ fn stored(state: Option<&FileState>) -> Option<String> {
         .and_then(|state| serde_json::to_string(state).ok())
 }
 
-/// Notes that `source` was opened at `now` (Unix seconds). Where it was left
-/// is kept.
-pub fn opened(db: &Db, source: &str, title: &str, now: i64) -> AppResult<()> {
+/// Notes that `source` was opened at `now` (Unix seconds), in `playlist`
+/// or alone. Where it was left is kept.
+pub fn opened(
+    db: &Db,
+    source: &str,
+    title: &str,
+    playlist: Option<&PlayedIn>,
+    now: i64,
+) -> AppResult<()> {
     db.write(|tx| {
         tx.execute(
-            "INSERT INTO history (source, title, played_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(source) DO UPDATE SET title = excluded.title, played_at = excluded.played_at",
-            params![source, title, now],
+            "INSERT INTO history (source, title, played_at, playlist) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(source) DO UPDATE SET title = excluded.title, played_at = excluded.played_at,
+                playlist = excluded.playlist",
+            params![source, title, now, stored_playlist(playlist)],
         )?;
         Ok(())
     })
@@ -201,14 +242,30 @@ pub fn find(db: &Db, source: &str) -> AppResult<Option<HistoryEntry>> {
     })
 }
 
-/// The most recently played things, newest first.
+/// The most recently played things, newest first. A playlist is one of
+/// them, however many of its items were played: the one played last
+/// stands for it, and opening it brings the whole playlist back.
 pub fn recent(db: &Db, limit: u32) -> AppResult<Vec<HistoryEntry>> {
     db.read(|conn| {
         let mut statement = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM history ORDER BY played_at DESC, source LIMIT ?1"
+            "SELECT {COLUMNS} FROM history ORDER BY played_at DESC, source"
         ))?;
-        let rows = statement.query_map([limit], entry)?;
-        rows.collect()
+        let mut seen = std::collections::HashSet::new();
+        let mut found = Vec::new();
+        for row in statement.query_map([], entry)? {
+            let row = row?;
+            let first = row
+                .playlist
+                .as_ref()
+                .is_none_or(|playlist| seen.insert(playlist.key.clone()));
+            if first {
+                found.push(row);
+                if found.len() >= limit as usize {
+                    break;
+                }
+            }
+        }
+        Ok(found)
     })
 }
 
@@ -217,8 +274,8 @@ pub fn restore(db: &Db, entry: &HistoryEntry) -> AppResult<()> {
     db.write(|tx| {
         tx.execute(
             "INSERT OR REPLACE INTO history
-                (source, title, duration, position, finished, played_at, state)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (source, title, duration, position, finished, played_at, state, playlist)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 entry.source,
                 entry.title,
@@ -226,16 +283,29 @@ pub fn restore(db: &Db, entry: &HistoryEntry) -> AppResult<()> {
                 entry.position.max(0.0),
                 i64::from(entry.finished),
                 entry.played_at,
-                stored(entry.state.as_ref())
+                stored(entry.state.as_ref()),
+                stored_playlist(entry.playlist.as_ref())
             ],
         )?;
         Ok(())
     })
 }
 
-/// Forgets one entry. Returns whether there was one.
+/// Forgets one entry, and with it the rest of the playlist it was played
+/// in: Recently played shows a playlist once, so removing it removes all
+/// of it. Returns whether there was one.
 pub fn forget(db: &Db, source: &str) -> AppResult<bool> {
-    db.write(|tx| Ok(tx.execute("DELETE FROM history WHERE source = ?1", [source])? > 0))
+    let key = find(db, source)?.and_then(|entry| entry.playlist.map(|playlist| playlist.key));
+    db.write(|tx| {
+        let mut forgotten = tx.execute("DELETE FROM history WHERE source = ?1", [source])?;
+        if let Some(key) = key {
+            forgotten += tx.execute(
+                "DELETE FROM history WHERE json_extract(playlist, '$.key') = ?1",
+                [key],
+            )?;
+        }
+        Ok(forgotten > 0)
+    })
 }
 
 /// Forgets everything.
@@ -288,7 +358,7 @@ mod tests {
         use crate::engine::types::SubtitleChoice;
 
         let db = Db::in_memory().unwrap();
-        opened(&db, FILM, "Solaris", 100).unwrap();
+        opened(&db, FILM, "Solaris", None, 100).unwrap();
         assert_eq!(find(&db, FILM).unwrap().unwrap().state, None);
 
         let chosen = FileState {
@@ -309,7 +379,7 @@ mod tests {
 
         // Opened again, played to its end: where it was left is forgotten,
         // what was chosen for it is not.
-        opened(&db, FILM, "Solaris", 900).unwrap();
+        opened(&db, FILM, "Solaris", None, 900).unwrap();
         progressed(&db, FILM, 7300.0, Some(7305.0), Some(&chosen), 950).unwrap();
         let ended = find(&db, FILM).unwrap().unwrap();
         assert!(ended.finished);
@@ -359,7 +429,7 @@ mod tests {
     #[test]
     fn remembers_where_a_film_was_left() {
         let db = Db::in_memory().unwrap();
-        opened(&db, FILM, "Solaris", 100).unwrap();
+        opened(&db, FILM, "Solaris", None, 100).unwrap();
         progressed(&db, FILM, 2537.0, Some(7305.0), None, 160).unwrap();
 
         let found = find(&db, FILM).unwrap().unwrap();
@@ -373,7 +443,7 @@ mod tests {
     fn reads_a_whole_file_name_back_as_names_are_shown_now() {
         let db = Db::in_memory().unwrap();
         // Written when a file's title was its whole name.
-        opened(&db, FILM, "Solaris.mkv", 100).unwrap();
+        opened(&db, FILM, "Solaris.mkv", None, 100).unwrap();
         assert_eq!(find(&db, FILM).unwrap().unwrap().title, "Solaris");
         assert_eq!(recent(&db, 10).unwrap()[0].title, "Solaris");
     }
@@ -381,9 +451,9 @@ mod tests {
     #[test]
     fn opening_again_keeps_the_position() {
         let db = Db::in_memory().unwrap();
-        opened(&db, FILM, "Solaris", 100).unwrap();
+        opened(&db, FILM, "Solaris", None, 100).unwrap();
         progressed(&db, FILM, 2537.0, Some(7305.0), None, 160).unwrap();
-        opened(&db, FILM, "Solaris", 900).unwrap();
+        opened(&db, FILM, "Solaris", None, 900).unwrap();
 
         let found = find(&db, FILM).unwrap().unwrap();
         assert_eq!(found.position, 2537.0);
@@ -393,7 +463,7 @@ mod tests {
     #[test]
     fn a_film_played_to_the_end_is_finished_and_starts_over_next_time() {
         let db = Db::in_memory().unwrap();
-        opened(&db, FILM, "Solaris", 100).unwrap();
+        opened(&db, FILM, "Solaris", None, 100).unwrap();
         progressed(&db, FILM, 7290.0, Some(7305.0), None, 7400).unwrap();
 
         let found = find(&db, FILM).unwrap().unwrap();
@@ -405,7 +475,7 @@ mod tests {
     #[test]
     fn progress_without_a_known_length_keeps_the_length_already_known() {
         let db = Db::in_memory().unwrap();
-        opened(&db, FILM, "Solaris", 100).unwrap();
+        opened(&db, FILM, "Solaris", None, 100).unwrap();
         progressed(&db, FILM, 60.0, Some(7305.0), None, 110).unwrap();
         progressed(&db, FILM, 90.0, None, None, 120).unwrap();
         assert_eq!(find(&db, FILM).unwrap().unwrap().duration, Some(7305.0));
@@ -421,9 +491,9 @@ mod tests {
     #[test]
     fn lists_the_most_recent_first() {
         let db = Db::in_memory().unwrap();
-        opened(&db, "/a.mkv", "a.mkv", 100).unwrap();
-        opened(&db, "/b.mkv", "b.mkv", 300).unwrap();
-        opened(&db, "/c.mkv", "c.mkv", 200).unwrap();
+        opened(&db, "/a.mkv", "a.mkv", None, 100).unwrap();
+        opened(&db, "/b.mkv", "b.mkv", None, 300).unwrap();
+        opened(&db, "/c.mkv", "c.mkv", None, 200).unwrap();
         let sources: Vec<_> = recent(&db, 2)
             .unwrap()
             .into_iter()
@@ -435,7 +505,7 @@ mod tests {
     #[test]
     fn a_forgotten_entry_can_be_put_back_as_it_was() {
         let db = Db::in_memory().unwrap();
-        opened(&db, FILM, "Solaris", 100).unwrap();
+        opened(&db, FILM, "Solaris", None, 100).unwrap();
         progressed(&db, FILM, 2537.0, Some(7305.0), None, 160).unwrap();
         let before = find(&db, FILM).unwrap().unwrap();
         assert!(forget(&db, FILM).unwrap());
@@ -455,6 +525,7 @@ mod tests {
             finished: false,
             played_at: 1,
             state: None,
+            playlist: None,
         };
         assert!(Recent::of(entry(&here.to_string_lossy()), None).available);
         assert!(!Recent::of(entry("/no/such/film.mkv"), None).available);
@@ -475,6 +546,7 @@ mod tests {
                     finished,
                     played_at: 1,
                     state: None,
+                    playlist: None,
                 },
                 None,
             )
@@ -489,12 +561,71 @@ mod tests {
     #[test]
     fn forgets_one_entry_or_all_of_them() {
         let db = Db::in_memory().unwrap();
-        opened(&db, "/a.mkv", "a.mkv", 100).unwrap();
-        opened(&db, "/b.mkv", "b.mkv", 300).unwrap();
+        opened(&db, "/a.mkv", "a.mkv", None, 100).unwrap();
+        opened(&db, "/b.mkv", "b.mkv", None, 300).unwrap();
         assert!(forget(&db, "/a.mkv").unwrap());
         assert!(!forget(&db, "/a.mkv").unwrap());
         assert_eq!(recent(&db, 10).unwrap().len(), 1);
         clear(&db).unwrap();
         assert!(recent(&db, 10).unwrap().is_empty());
+    }
+
+    fn in_playlist(key: &str, sources: &[&str]) -> PlayedIn {
+        PlayedIn {
+            key: key.to_owned(),
+            name: None,
+            items: sources
+                .iter()
+                .map(|source| PlayedItem {
+                    source: (*source).to_owned(),
+                    title: (*source).to_owned(),
+                    duration: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_playlist_is_listed_once_by_the_item_played_last() {
+        let db = Db::in_memory().unwrap();
+        let show = in_playlist("1-0", &["/e1.mkv", "/e2.mkv", "/e3.mkv"]);
+        opened(&db, "/e1.mkv", "e1", Some(&show), 100).unwrap();
+        opened(&db, "/film.mkv", "film", None, 150).unwrap();
+        opened(&db, "/e2.mkv", "e2", Some(&show), 200).unwrap();
+        let sources: Vec<_> = recent(&db, 10)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.source)
+            .collect();
+        assert_eq!(sources, ["/e2.mkv", "/film.mkv"]);
+        // The limit counts what is listed, not rows.
+        assert_eq!(recent(&db, 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn played_alone_later_it_is_no_longer_part_of_the_playlist() {
+        let db = Db::in_memory().unwrap();
+        let show = in_playlist("1-0", &["/e1.mkv", "/e2.mkv"]);
+        opened(&db, "/e1.mkv", "e1", Some(&show), 100).unwrap();
+        opened(&db, "/e1.mkv", "e1", None, 200).unwrap();
+        assert_eq!(find(&db, "/e1.mkv").unwrap().unwrap().playlist, None);
+    }
+
+    #[test]
+    fn forgetting_a_playlist_forgets_all_of_it() {
+        let db = Db::in_memory().unwrap();
+        let show = in_playlist("1-0", &["/e1.mkv", "/e2.mkv"]);
+        opened(&db, "/e1.mkv", "e1", Some(&show), 100).unwrap();
+        opened(&db, "/e2.mkv", "e2", Some(&show), 200).unwrap();
+        opened(&db, "/film.mkv", "film", None, 150).unwrap();
+        assert!(forget(&db, "/e2.mkv").unwrap());
+        let left: Vec<_> = recent(&db, 10).unwrap().into_iter().map(|e| e.source).collect();
+        assert_eq!(left, ["/film.mkv"]);
+        // Put back, it is the playlist again.
+        let mut entry = find(&db, "/film.mkv").unwrap().unwrap();
+        entry.source = "/e2.mkv".to_owned();
+        entry.playlist = Some(show.clone());
+        restore(&db, &entry).unwrap();
+        assert_eq!(find(&db, "/e2.mkv").unwrap().unwrap().playlist, Some(show));
     }
 }

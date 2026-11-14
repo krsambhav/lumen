@@ -85,7 +85,7 @@ describe("the panel beside the picture", () => {
   it("is closed from its own header, with the keys that opened the tab", async () => {
     renderUi(<Inspector />);
     const hide = screen.getByRole("button", { name: "Hide panel" });
-    expect(hide).toHaveAttribute("aria-keyshortcuts", "Shift+Meta+P");
+    expect(hide).toHaveAttribute("aria-keyshortcuts", "Meta+P");
     act(() => useInterface.getState().setTab("chapters"));
     expect(screen.getByRole("button", { name: "Hide panel" })).toHaveAttribute(
       "aria-keyshortcuts",

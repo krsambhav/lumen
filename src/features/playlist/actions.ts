@@ -332,7 +332,7 @@ export const playlistActions: readonly Action[] = [
     keywords: ["queue", "list", "panel", "sidebar", "up next"],
     category: "view",
     icon: ListVideo,
-    shortcuts: ["Shift+Cmd+p"],
+    shortcuts: ["Cmd+p", "Shift+Cmd+p"],
     unavailable: needsMedia,
     // From the keyboard the keyboard goes with it, to the list (DESIGN.md §7).
     run: (context) =>
