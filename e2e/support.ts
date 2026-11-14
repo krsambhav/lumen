@@ -231,7 +231,7 @@ export async function glide(page: Page, control: Locator): Promise<void> {
 
 /** Tabs until `control` has focus. */
 export async function tabTo(page: Page, control: Locator): Promise<void> {
-  for (let presses = 0; presses < 10; presses += 1) {
+  for (let presses = 0; presses < 20; presses += 1) {
     await tab(page);
     if (await control.evaluate((element) => element === document.activeElement)) {
       return;

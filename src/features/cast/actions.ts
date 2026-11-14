@@ -25,8 +25,16 @@ export const castActions: readonly Action[] = [
     shortcuts: ["Alt+Cmd+c"],
     unavailable: needsMedia,
     run: () => {
-      // The menu beside the cast button lists the devices.
       void commands.castSearch();
+      // The menu beside the cast button lists the devices. On a narrow stage
+      // the button is in More, which opens instead, with Cast first in it.
+      const button = document.querySelector<HTMLElement>('button[aria-label="Cast"]');
+      if (button !== null && button.offsetParent === null) {
+        const more = document.querySelector<HTMLElement>('button[aria-label="More"]');
+        more?.focus();
+        more?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        return;
+      }
       useCast.getState().setMenuOpen(true);
     },
   },

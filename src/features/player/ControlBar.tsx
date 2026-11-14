@@ -280,6 +280,8 @@ function MoreMenu() {
   const [open, setOpen] = useState(false);
   // On a tight stage the subtitles' controls leave the row and are listed here (DESIGN.md §4).
   const [tight, setTight] = useState(false);
+  // On a crowded stage Cast leaves the row and is listed here.
+  const [narrow, setNarrow] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   useChromeHold("menu", open);
   const hasSubtitles = usePlayer((state) => tracksOf(state.tracks, "subtitle").length > 0);
@@ -293,6 +295,7 @@ function MoreMenu() {
       onOpenChange={(next) => {
         if (next) {
           setTight(trigger.current?.closest("[data-tight]") != null);
+          setNarrow(trigger.current?.closest("[data-crowded]") != null);
         }
         setOpen(next);
       }}
@@ -311,6 +314,11 @@ function MoreMenu() {
                 <SubtitleChoices />
               </MenuSub>
             ) : null}
+            <MenuSeparator />
+          </>
+        ) : null}
+        {narrow ? (
+          <>
             <MenuSub label="Cast" checkable>
               <CastChoices open={open} anchor={() => trigger.current?.getBoundingClientRect()} />
             </MenuSub>
@@ -404,8 +412,8 @@ export function ControlBar() {
             </div>
             <div className="min-w-0 flex-1" />
             <SubtitleControls />
-            {/* Below the tight width it leaves for More, with the subtitles (DESIGN.md §4). */}
-            <div className="flex flex-none items-center group-data-[tight]/stage:hidden">
+            {/* On a crowded stage it leaves for More (DESIGN.md §4). */}
+            <div className="flex flex-none items-center group-data-[crowded]/stage:hidden">
               <CastMenu />
             </div>
             <div className="flex flex-none items-center gap-1">

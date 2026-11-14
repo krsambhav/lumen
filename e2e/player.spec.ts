@@ -59,6 +59,7 @@ test.describe("stage", () => {
       await openFilm(page);
 
       const play = await box(playButton(page));
+      const stop = await box(page.getByRole("button", { name: "Stop" }));
       const mute = await box(page.getByRole("button", { name: "Mute" }));
       const time = await box(readout(page));
       const full = await box(page.getByRole("button", { name: "Enter full screen" }));
@@ -75,7 +76,8 @@ test.describe("stage", () => {
       expect(Math.round(full.x + full.width - 9)).toBe(width - GUTTER);
 
       // Groups are 12 px apart; nothing touches.
-      expect(mute.x - (play.x + play.width)).toBe(12);
+      expect(stop.x - (play.x + play.width)).toBe(4);
+      expect(mute.x - (stop.x + stop.width)).toBe(12);
       const volume = page.getByRole("slider", { name: "Volume" });
       if (width < 720) {
         // Folded into Mute: it takes no room in the row, is not seen and cannot be touched,
@@ -599,9 +601,13 @@ test.describe("keyboard focus", () => {
 
     for (const control of [
       playButton(page),
+      page.getByRole("button", { name: "Stop" }),
       page.getByRole("button", { name: "Mute" }),
       page.getByRole("slider", { name: "Volume" }),
       readout(page),
+      page.getByRole("button", { name: "Show subtitles" }),
+      page.getByRole("button", { name: "Subtitle track" }),
+      page.getByRole("button", { name: "Cast" }),
       page.getByRole("button", { name: "More" }),
       page.getByRole("button", { name: "Enter full screen" }),
     ]) {
@@ -1102,6 +1108,7 @@ test.describe("the transport row with a playlist", () => {
       const previous = await box(page.getByRole("button", { name: "Previous item" }));
       const play = await box(playButton(page));
       const next = await box(page.getByRole("button", { name: "Next item" }));
+      const stop = await box(page.getByRole("button", { name: "Stop" }));
       const mute = await box(page.getByRole("button", { name: "Mute" }));
       const time = await box(page.getByRole("button", { name: /^10 minutes/ }));
       const rate = await box(speed);
@@ -1111,7 +1118,8 @@ test.describe("the transport row with a playlist", () => {
       // Inside a group, 4 px; between groups, 12 px.
       expect(play.x - (previous.x + previous.width)).toBe(4);
       expect(next.x - (play.x + play.width)).toBe(4);
-      expect(mute.x - (next.x + next.width)).toBe(12);
+      expect(stop.x - (next.x + next.width)).toBe(4);
+      expect(mute.x - (stop.x + stop.width)).toBe(12);
       expect(rate.x - (time.x + time.width)).toBe(4);
       expect(full.x - (more.x + more.width)).toBe(4);
       // The spacer is whatever is left, and is never less than the gap between groups.

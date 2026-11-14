@@ -37,6 +37,15 @@ const ACTIVATION_MS = 250;
  */
 const NARROW_PX = 720;
 const TIGHT_PX = 600;
+/**
+ * Below this, Cast leaves the row for More: a playlist's Previous and Next,
+ * Stop and a speed readout leave no room for it under about 760 px.
+ */
+const CROWDED_PX = 780;
+
+function crowdedAt(pixels: number): boolean {
+  return pixels !== 0 && pixels < CROWDED_PX;
+}
 
 type Width = "wide" | "narrow" | "tight";
 
@@ -57,23 +66,28 @@ function widthOf(pixels: number): Width {
  * The first answer is worked out from the window before anything is drawn,
  * so the row appears already arranged instead of folding as it arrives.
  */
-function useStageWidth(panelOpen: boolean): [React.RefObject<HTMLDivElement>, Width] {
+function useStageWidth(
+  panelOpen: boolean,
+): [React.RefObject<HTMLDivElement>, Width, boolean] {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState<Width>(() =>
-    widthOf(Math.max(1, window.innerWidth - (panelOpen ? INSPECTOR_WIDTH : 0))),
-  );
+  const first = Math.max(1, window.innerWidth - (panelOpen ? INSPECTOR_WIDTH : 0));
+  const [width, setWidth] = useState<Width>(() => widthOf(first));
+  const [crowded, setCrowded] = useState(() => crowdedAt(first));
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) {
       return;
     }
-    const measure = () => setWidth(widthOf(element.clientWidth));
+    const measure = () => {
+      setWidth(widthOf(element.clientWidth));
+      setCrowded(crowdedAt(element.clientWidth));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  return [ref, width];
+  return [ref, width, crowded];
 }
 
 /**
@@ -91,7 +105,7 @@ export function Stage() {
   const ended = usePlayer((state) => state.status === "ended");
   const playing = usePlayer((state) => state.status === "playing" || state.status === "buffering");
   const panelOpen = useInterface((state) => state.panelOpen);
-  const [stageRef, width] = useStageWidth(panelOpen);
+  const [stageRef, width, crowded] = useStageWidth(panelOpen);
   const visible = useChrome((state) => state.visible);
   const wake = useChrome((state) => state.wake);
   const rest = useChrome((state) => state.rest);
@@ -201,6 +215,7 @@ export function Stage() {
         // What the transport row reads to know how much room it has.
         data-narrow={width === "wide" ? undefined : ""}
         data-tight={width === "tight" ? "" : undefined}
+        data-crowded={crowded ? "" : undefined}
         className={cn(
           "group/stage stage relative h-full overflow-hidden",
           !visible && "cursor-none",
