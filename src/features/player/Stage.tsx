@@ -9,6 +9,7 @@ import { usePlaylistUi } from "@/features/playlist/ui";
 import { nameOf } from "@/features/shell/failure";
 import { INSPECTOR_WIDTH, useInterface } from "@/features/shell/interface";
 import { TitleBar } from "@/features/shell/TitleBar";
+import { NextEpisodeCard } from "@/features/torrents/NextEpisodeCard";
 import { commands } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { focusedFromKeyboard } from "@/lib/focus-origin";
@@ -66,9 +67,7 @@ function widthOf(pixels: number): Width {
  * The first answer is worked out from the window before anything is drawn,
  * so the row appears already arranged instead of folding as it arrives.
  */
-function useStageWidth(
-  panelOpen: boolean,
-): [React.RefObject<HTMLDivElement>, Width, boolean] {
+function useStageWidth(panelOpen: boolean): [React.RefObject<HTMLDivElement>, Width, boolean] {
   const ref = useRef<HTMLDivElement>(null);
   const first = Math.max(1, window.innerWidth - (panelOpen ? INSPECTOR_WIDTH : 0));
   const [width, setWidth] = useState<Width>(() => widthOf(first));
@@ -288,6 +287,8 @@ export function Stage() {
 
         {/* An offer to skip a recap or an intro: it stays while the chrome dims. */}
         <SkipButton />
+        {/* Near the end of an episode: the next one, if it can be played at once. */}
+        <NextEpisodeCard />
 
         {/* Last, so it is drawn above the chrome and its scrims. */}
         <OnScreenDisplay />

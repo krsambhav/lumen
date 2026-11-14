@@ -244,6 +244,7 @@ export const MENU_BAR: readonly { name: string; items: readonly (string | Submen
       "file.openFolder",
       "file.openAddress",
       "file.searchTorrents",
+      "file.nextEpisode",
       { submenu: "Open recent", items: recentItems },
       { submenu: "Open playlist", items: playlistItems },
       "file.add",

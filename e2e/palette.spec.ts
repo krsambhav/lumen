@@ -212,11 +212,15 @@ test.describe("the command palette", () => {
     expect(await chosen(page)).toBe("Enter full screen");
     await expect(page.getByRole("option", { name: /Exit full screen/ })).toHaveCount(0);
     // Nothing found by letters scattered through a name.
+    // (Anything of three letters or more is also offered as a torrent search, last.)
+    const actions = page.getByRole("option").filter({ hasNotText: /^Search torrents for/ });
     await field.fill("mute");
-    await expect(page.getByRole("option")).toHaveCount(1);
+    await expect(actions).toHaveCount(1);
     await field.fill("delete");
-    await expect(page.getByRole("option")).toHaveCount(0);
-    await expect(page.getByText("Nothing matches “delete”.")).toBeVisible();
+    await expect(actions).toHaveCount(0);
+    await expect(page.getByRole("option")).toHaveText(["Search torrents for “delete”"]);
+    await field.fill("dx");
+    await expect(page.getByText("Nothing matches “dx”.")).toBeVisible();
   });
 
   test("sinks what cannot be done below what can, and never chooses it", async ({ page }) => {
@@ -230,9 +234,14 @@ test.describe("the command palette", () => {
       "aria-disabled",
       "true",
     );
-    const names = await rows.evaluateAll((all) =>
-      all.map((row) => [row.querySelector(".truncate")?.textContent, row.ariaDisabled === "true"]),
-    );
+    const names = (
+      await rows.evaluateAll((all) =>
+        all.map((row) => [
+          row.querySelector(".truncate")?.textContent,
+          row.ariaDisabled === "true",
+        ]),
+      )
+    ).filter(([name]) => !String(name).startsWith("Search torrents for"));
     const firstDimmed = names.findIndex(([, dimmed]) => dimmed);
     expect(names.slice(firstDimmed).every(([, dimmed]) => dimmed)).toBe(true);
   });

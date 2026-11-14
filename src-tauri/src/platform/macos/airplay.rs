@@ -80,10 +80,115 @@ struct Objects {
     said_failure: bool,
     said_finished: bool,
     volume: Option<(f32, bool)>,
+    /// The device chosen in Lumen's own list, to be found and played on.
+    wanted: Option<String>,
+    /// When the session began.
+    since: Instant,
+    /// When the player was sent to the wanted device.
+    routed_at: Option<Instant>,
+    /// The routing that sends the player there, kept for as long as it plays.
+    context: Option<Retained<AnyObject>>,
+    /// Where the picker opens if it is needed after all.
+    anchor: Anchor,
+    window: WebviewWindow,
 }
+
+/// How long a device chosen from the list is looked for before the picker
+/// is opened instead.
+const FIND_FOR: Duration = Duration::from_secs(4);
+
+/// How long a device is given to take the film before the picker is opened
+/// instead (it may want a code, which only the picker can ask for).
+const ANSWER_FOR: Duration = Duration::from_secs(10);
 
 thread_local! {
     static OBJECTS: RefCell<Option<Objects>> = const { RefCell::new(None) };
+    /// AVFoundation's own search for AirPlay devices, kept running once started.
+    static FINDER: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+}
+
+/// Whether `object` answers `selector`.
+fn answers(object: &AnyObject, selector: objc2::runtime::Sel) -> bool {
+    // SAFETY: respondsToSelector: is defined on every NSObject.
+    unsafe { msg_send![object, respondsToSelector: selector] }
+}
+
+/// AVFoundation's search for AirPlay devices, started if need be.
+///
+/// macOS has no published way for an app to list AirPlay devices or to play
+/// on one it chose itself; this uses the classes Apple's own apps use
+/// (`AVOutputDeviceDiscoverySession`, `AVOutputContext`). Each is looked up
+/// and asked whether it answers before it is called, so on a macOS without
+/// them the list's AirPlay devices fall back to the system's picker.
+fn finder() -> Option<Retained<AnyObject>> {
+    FINDER.with(|slot| {
+        if let Some(finder) = slot.borrow().as_ref() {
+            return Some(finder.clone());
+        }
+        let class = objc2::runtime::AnyClass::get(c"AVOutputDeviceDiscoverySession")?;
+        if class
+            .instance_method(sel!(initWithDeviceFeatures:))
+            .is_none()
+            || class.instance_method(sel!(setDiscoveryMode:)).is_none()
+            || class
+                .instance_method(sel!(availableOutputDevices))
+                .is_none()
+        {
+            return None;
+        }
+        // SAFETY: checked above; audio and video devices (features 1 | 4),
+        // in detailed discovery mode (2), as the system's picker does.
+        let finder: Option<Retained<AnyObject>> = unsafe {
+            let allocated: objc2::rc::Allocated<AnyObject> = msg_send![class, alloc];
+            msg_send![allocated, initWithDeviceFeatures: 5u64]
+        };
+        let finder = finder?;
+        // SAFETY: checked above.
+        unsafe {
+            let _: () = msg_send![&*finder, setDiscoveryMode: 2isize];
+        }
+        *slot.borrow_mut() = Some(finder.clone());
+        Some(finder)
+    })
+}
+
+/// The AirPlay device AVFoundation knows by `name`, if it has found it.
+fn find_device(name: &str) -> Option<Retained<AnyObject>> {
+    let finder = finder()?;
+    // SAFETY: the finder answers this (checked when it was made).
+    let devices: Option<Retained<objc2_foundation::NSArray<AnyObject>>> =
+        unsafe { msg_send![&*finder, availableOutputDevices] };
+    let wanted = name.trim().to_lowercase();
+    devices?.iter().find(|device| {
+        if !answers(device, sel!(name)) {
+            return false;
+        }
+        // SAFETY: checked; returns an NSString or nil.
+        let found: Option<Retained<NSString>> = unsafe { msg_send![&**device, name] };
+        found.is_some_and(|found| found.to_string().trim().to_lowercase() == wanted)
+    })
+}
+
+/// Sends `player` to `device`. Returns the routing, which must be kept.
+fn route(player: &AVPlayer, device: &AnyObject) -> Option<Retained<AnyObject>> {
+    let class = objc2::runtime::AnyClass::get(c"AVOutputContext")?;
+    let player_object: &AnyObject = player.as_ref();
+    if !answers(player_object, sel!(setOutputContext:))
+        || class
+            .instance_method(sel!(setOutputDevice:options:))
+            .is_none()
+    {
+        return None;
+    }
+    // SAFETY: checked above; a new context of the player's own, given the device.
+    unsafe {
+        let context: Option<Retained<AnyObject>> = msg_send![class, outputContext];
+        let context = context?;
+        let _: () = msg_send![player_object, setOutputContext: &*context];
+        let _: () =
+            msg_send![&*context, setOutputDevice: device, options: Option::<&AnyObject>::None];
+        Some(context)
+    }
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -113,10 +218,6 @@ fn cm_time(seconds: f64) -> CMTime {
 /// read through an interface Apple does not publish, so every step is asked
 /// whether it is there first; without it the session is called "AirPlay".
 fn device_name(player: &AVPlayer) -> Option<String> {
-    fn answers(object: &AnyObject, selector: objc2::runtime::Sel) -> bool {
-        // SAFETY: respondsToSelector: is defined on every NSObject.
-        unsafe { msg_send![object, respondsToSelector: selector] }
-    }
     let player: &AnyObject = player.as_ref();
     if !answers(player, sel!(outputContext)) {
         return None;
@@ -319,6 +420,33 @@ fn poll(id: u64, events: &EventSink) -> bool {
             }
             objects.was_active = active;
             if !objects.ever_active {
+                if let Some(name) = objects.wanted.clone() {
+                    match objects.routed_at {
+                        None => {
+                            if let Some(device) = find_device(&name) {
+                                objects.context = route(player, &device);
+                                if objects.context.is_some() {
+                                    tracing::info!(device = %name, "sent to an AirPlay device");
+                                    objects.routed_at = Some(Instant::now());
+                                }
+                            }
+                            if objects.routed_at.is_none() && objects.since.elapsed() > FIND_FOR {
+                                tracing::warn!(device = %name, "AirPlay device not reachable directly; opening the picker");
+                                objects.wanted = None;
+                                let window = objects.window.clone();
+                                present(objects, &window, objects.anchor);
+                            }
+                        }
+                        Some(at) if at.elapsed() > ANSWER_FOR => {
+                            tracing::warn!(device = %name, "AirPlay device did not take the film; opening the picker");
+                            objects.wanted = None;
+                            let window = objects.window.clone();
+                            present(objects, &window, objects.anchor);
+                        }
+                        Some(_) => {}
+                    }
+                    return (said, true);
+                }
                 let closed = objects.delegate.ivars().get();
                 if closed.is_some_and(|at| at.elapsed() > CHOICE_GRACE) {
                     said.push(TargetEvent::Closed(None));
@@ -387,7 +515,18 @@ impl Host {
 }
 
 impl AirPlayHost for Host {
-    fn open(&self, anchor: Anchor, events: EventSink) -> Arc<dyn AirPlayTarget> {
+    fn warm(&self) {
+        let _ = self.window.run_on_main_thread(|| {
+            let _ = finder();
+        });
+    }
+
+    fn open(
+        &self,
+        anchor: Anchor,
+        device: Option<String>,
+        events: EventSink,
+    ) -> Arc<dyn AirPlayTarget> {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let alive = Arc::new(AtomicBool::new(true));
         let window = self.window.clone();
@@ -415,9 +554,19 @@ impl AirPlayHost for Host {
                     said_failure: false,
                     said_finished: false,
                     volume: None,
+                    wanted: device.clone(),
+                    since: Instant::now(),
+                    routed_at: None,
+                    context: None,
+                    anchor,
+                    window: window.clone(),
                 }
             };
-            present(&objects, &window, anchor);
+            if device.is_none() {
+                present(&objects, &window, anchor);
+            } else {
+                let _ = finder();
+            }
             OBJECTS.with(|slot| {
                 if let Some(old) = slot.borrow_mut().replace(objects) {
                     old.picker.removeFromSuperview();

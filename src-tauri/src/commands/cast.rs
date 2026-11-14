@@ -21,11 +21,17 @@ pub fn cast_search(cast: State<'_, Arc<Caster>>) {
     cast.search();
 }
 
-/// Casts what is open to a Google Cast device found by the search.
+/// Casts what is open to a device found by the search. `anchor` is the cast
+/// button, where the AirPlay picker of macOS opens if an AirPlay device
+/// cannot be reached directly.
 #[tauri::command]
 #[specta::specta]
-pub async fn cast_start(cast: State<'_, Arc<Caster>>, device: String) -> AppResult<()> {
-    cast.start(&device)
+pub async fn cast_start(
+    cast: State<'_, Arc<Caster>>,
+    device: String,
+    anchor: Anchor,
+) -> AppResult<()> {
+    cast.start(&device, anchor)
 }
 
 /// Opens the AirPlay picker of macOS over `anchor`, the cast button.

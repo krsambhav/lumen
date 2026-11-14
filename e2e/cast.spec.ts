@@ -14,15 +14,42 @@ test.describe("casting", () => {
     await expect(menu.getByRole("menuitemcheckbox", { name: /Living Room TV/ })).toBeVisible();
     await expect(menu.getByRole("menuitemcheckbox", { name: /Bedroom/ })).toBeVisible();
     await menu.getByRole("menuitemcheckbox", { name: /Living Room TV/ }).click();
-    expect(await calls(page, "castStart")).toEqual([{ device: "cast:living" }]);
+    expect(await calls(page, "castStart")).toEqual([
+      { device: "cast:living", anchor: expect.objectContaining({ width: 36, height: 36 }) },
+    ]);
 
-    await expect(page.getByRole("status").filter({ hasText: "Playing on" })).toContainText("Living Room TV");
-    await expect(page.getByRole("button", { name: "Cast" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("status").filter({ hasText: "Playing on" })).toContainText(
+      "Living Room TV",
+    );
+    await expect(page.getByRole("button", { name: "Cast" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     await page.getByRole("button", { name: "Cast" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: /Living Room TV/ })).toBeChecked();
     await page.getByRole("menuitem", { name: "Stop casting" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Playing on" })).toHaveCount(0);
+  });
+
+  test("lists AirPlay devices under their own label, with the system's picker last", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Cast" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitemcheckbox", { name: /Den/ })).toBeVisible();
+    // A speaker has no picture: not offered for a film.
+    await expect(menu.getByRole("menuitemcheckbox", { name: /Kitchen/ })).toHaveCount(0);
+    const names = await menu.locator("[role=menuitem], [role=menuitemcheckbox], .label").allTextContents();
+    const shown = names.map((name) => name.replace(/\s+/g, " ").trim());
+    // Chromecasts under their label, then AirPlay devices under theirs, then the system's picker.
+    expect(shown[0]).toBe("Chromecast");
+    expect(shown.indexOf("AirPlay")).toBe(3);
+    expect(shown[4]).toMatch(/^Den/);
+    expect(shown.at(-1)).toBe("Other AirPlay devices…");
+    await menu.getByRole("menuitemcheckbox", { name: /Den/ }).click();
+    expect((await calls(page, "castStart"))[0]).toMatchObject({ device: "airplay:den" });
+    await expect(page.getByRole("status").filter({ hasText: "Playing on" })).toContainText("Den");
   });
 
   test("sits between the subtitles and More, 12 px from each", async ({ page }) => {

@@ -264,8 +264,12 @@ export const commands = {
 	 *  time, macOS may ask whether Lumen may use the local network.
 	 */
 	castSearch: (options?: InvokeOptions) => __TAURI_INVOKE<void>("cast_search", undefined, options),
-	/**  Casts what is open to a Google Cast device found by the search. */
-	castStart: (device: string, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_start", { device }, options)),
+	/**
+	 *  Casts what is open to a device found by the search. `anchor` is the cast
+	 *  button, where the AirPlay picker of macOS opens if an AirPlay device
+	 *  cannot be reached directly.
+	 */
+	castStart: (device: string, anchor: Anchor, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_start", { device, anchor }, options)),
 	/**  Opens the AirPlay picker of macOS over `anchor`, the cast button. */
 	castAirplay: (anchor: Anchor, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_airplay", { anchor }, options)),
 	/**  Stops casting; the Mac takes over, paused where the TV was. */
@@ -1120,7 +1124,7 @@ export type MockCommandHandlers = {
     subtitlesSyncUndo: () => null | Promise<null>,
     castSnapshot: () => CastSnapshot | Promise<CastSnapshot>,
     castSearch: () => void | Promise<void>,
-    castStart: (args: { device: string }) => null | Promise<null>,
+    castStart: (args: { device: string; anchor: Anchor }) => null | Promise<null>,
     castAirplay: (args: { anchor: Anchor }) => null | Promise<null>,
     castStop: () => null | Promise<null>,
 };

@@ -52,7 +52,7 @@ test.describe("home", () => {
       // Measured together, once the font is in: boxes read one at a time
       // while the page settles do not belong to the same layout.
       await page.evaluate(() => document.fonts.ready);
-      const [heading, button, line, ruler] = await page.evaluate(() => {
+      const [heading, button, line, ruler, search] = await page.evaluate(() => {
         const rect = (element: Element | null | undefined) => {
           const { x, y, width: w, height: h } = (element as Element).getBoundingClientRect();
           return { x, y, width: w, height: h };
@@ -63,6 +63,7 @@ test.describe("home", () => {
           rect(main.querySelector("button")),
           rect(main.querySelector("p")),
           rect(main.querySelector("[aria-hidden='true']")),
+          rect(main.querySelector("input[type='search']")),
         ] as const;
       });
 
@@ -79,7 +80,8 @@ test.describe("home", () => {
 
       // A little above the middle, and wholly inside the window.
       const top = ruler.y;
-      const bottom = button.y + button.height;
+      // The lead ends with the torrent search field, under the ways to open.
+      const bottom = search.y + search.height;
       const centre = (top + bottom) / 2;
       expect(centre).toBeLessThan(height / 2 + 1);
       expect(centre).toBeGreaterThan(height * 0.38);
@@ -217,14 +219,19 @@ test.describe("home, once something has been played", () => {
     await openHistory(page);
     const headline = await box(page.getByRole("heading", { name: "Drop a file to play" }));
     const label = await box(page.getByRole("heading", { name: "Recently played" }));
-    const tiles = page.getByRole("region", { name: "Recently played" }).getByRole("button");
+    // Every button in the section is a tile, but for Clear beside its heading.
+    const tiles = page
+      .getByRole("region", { name: "Recently played" })
+      .getByRole("button")
+      .filter({ hasNotText: /^Clear$/ });
     const first = await box(tiles.first());
     expect(headline.x).toBe(GUTTER);
     expect(label.x).toBe(GUTTER);
     expect(first.x).toBe(GUTTER);
-    // The lead comes first, then 48 px, then the label, then 12 px, then the tiles.
-    const open = await box(page.getByRole("button", { name: "Open file…" }));
-    expect(label.y - (open.y + open.height)).toBe(48);
+    // The lead (ending with the torrent search field) comes first, then 48 px,
+    // then the label, then 12 px, then the tiles.
+    const search = await box(page.getByRole("search"));
+    expect(label.y - (search.y + search.height)).toBe(48);
     expect(first.y - (label.y + label.height)).toBe(12);
     // Someone who has played a film knows what Lumen plays.
     await expect(page.getByText(/plays MKV, MP4, MOV/)).toHaveCount(0);
@@ -239,7 +246,12 @@ test.describe("home, once something has been played", () => {
       const region = page.getByRole("region", { name: "Recently played" });
       await expect(region).toBeVisible();
       const tiles = await Promise.all(
-        (await region.getByRole("button").all()).map((tile) => box(tile)),
+        (
+          await region
+            .getByRole("button")
+            .filter({ hasNotText: /^Clear$/ })
+            .all()
+        ).map((tile) => box(tile)),
       );
 
       // As many as fit at 168 px or more, six at most: a wider window gets larger tiles.
@@ -320,7 +332,11 @@ test.describe("home, once something has been played", () => {
     page,
   }) => {
     await openHistory(page);
-    const tiles = page.getByRole("region", { name: "Recently played" }).getByRole("button");
+    // Every button in the section is a tile, but for Clear beside its heading.
+    const tiles = page
+      .getByRole("region", { name: "Recently played" })
+      .getByRole("button")
+      .filter({ hasNotText: /^Clear$/ });
     const count = await tiles.count();
     await tabTo(page, tiles.first());
     const second = await tiles.nth(1).getAttribute("aria-label");

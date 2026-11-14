@@ -48,63 +48,106 @@ function deviceKind(device: CastDevice): string {
   return device.model.trim() || (device.video ? "Chromecast" : "Speaker");
 }
 
-/**
- * The menu's items: the Chromecasts found, AirPlay (whose devices macOS
- * lists in its own picker), and Stop while something is cast. In the cast
- * button's menu and, on a tight stage, in More.
- */
-export function CastChoices({ open, anchor }: { open: boolean; anchor: Anchor }) {
-  const offered = useOffered();
-  const session = useCast((state) => state.session);
-  const looking = useLooking(open, offered.length > 0);
-  const castingTo = session?.protocol === "chromecast" ? session.device : null;
+interface SectionProps {
+  label: string;
+  devices: CastDevice[];
+  /** The name of the device of this kind being cast to, if any. */
+  castingTo: string | null;
+  looking: boolean;
+  onChoose: (device: CastDevice) => void;
+}
 
-  const openAirPlay = () => {
-    const box = anchor();
-    if (box === undefined) {
-      return;
-    }
-    send(
-      "open AirPlay",
-      commands.castAirplay({ x: box.x, y: box.y, width: box.width, height: box.height }),
-    );
-  };
-
+/** One kind of device under its label, or why there are none yet. */
+function DeviceSection({ label, devices, castingTo, looking, onChoose }: SectionProps) {
   return (
     <>
-      <MenuLabel>Chromecast</MenuLabel>
-      {offered.map((device) => (
+      <MenuLabel>{label}</MenuLabel>
+      {devices.map((device) => (
         <MenuItem
           key={device.id}
           checked={castingTo === device.name}
           detail={deviceKind(device)}
           onSelect={() => {
             if (castingTo !== device.name) {
-              send(`cast to ${device.name}`, commands.castStart(device.id));
+              onChoose(device);
             }
           }}
         >
           {device.name}
         </MenuItem>
       ))}
-      {offered.length === 0 ? (
+      {devices.length === 0 ? (
         <MenuItem disabled>
           {looking ? "Looking for devices…" : "None found on this network"}
         </MenuItem>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * The menu's items: the Chromecasts and the AirPlay devices found, each
+ * under its own label; the system's AirPlay picker for anything not listed;
+ * and Stop while something is cast. In the cast button's menu and, on a
+ * crowded stage, in More.
+ */
+export function CastChoices({ open, anchor }: { open: boolean; anchor: Anchor }) {
+  const offered = useOffered();
+  const session = useCast((state) => state.session);
+  const looking = useLooking(open, offered.length > 0);
+  const chromecasts = offered.filter((device) => device.protocol === "chromecast");
+  const airplays = offered.filter((device) => device.protocol === "airPlay");
+  const live = session !== null && session.phase !== "choosing";
+  const castingTo = (protocol: CastDevice["protocol"]) =>
+    live && session.protocol === protocol ? session.device : null;
+  // An AirPlay session started from the system's picker, on a device not in the list.
+  const elsewhere =
+    live && session.protocol === "airPlay" && !airplays.some((d) => d.name === session.device);
+
+  const where = () => {
+    const box = anchor();
+    return box === undefined
+      ? undefined
+      : { x: box.x, y: box.y, width: box.width, height: box.height };
+  };
+  const castTo = (device: CastDevice) => {
+    const at = where();
+    if (at !== undefined) {
+      send(`cast to ${device.name}`, commands.castStart(device.id, at));
+    }
+  };
+  const openPicker = () => {
+    const at = where();
+    if (at !== undefined) {
+      send("open AirPlay", commands.castAirplay(at));
+    }
+  };
+
+  return (
+    <>
+      <DeviceSection
+        label="Chromecast"
+        devices={chromecasts}
+        castingTo={castingTo("chromecast")}
+        looking={looking}
+        onChoose={castTo}
+      />
       <MenuSeparator />
+      <DeviceSection
+        label="AirPlay"
+        devices={airplays}
+        castingTo={castingTo("airPlay")}
+        looking={looking}
+        onChoose={castTo}
+      />
       <MenuItem
-        checked={session?.protocol === "airPlay" && session.phase !== "choosing"}
-        detail={
-          session?.protocol === "airPlay" && session.phase !== "choosing"
-            ? session.device
-            : undefined
-        }
-        onSelect={openAirPlay}
+        checked={elsewhere}
+        detail={elsewhere ? session.device : undefined}
+        onSelect={openPicker}
       >
-        AirPlay…
+        Other AirPlay devices…
       </MenuItem>
-      {session !== null && session.phase !== "choosing" ? (
+      {live ? (
         <>
           <MenuSeparator />
           <MenuItem onSelect={stopCasting}>Stop casting</MenuItem>

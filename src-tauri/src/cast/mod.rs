@@ -168,8 +168,17 @@ pub struct Anchor {
 
 /// What the platform must provide for AirPlay.
 pub trait AirPlayHost: Send + Sync {
-    /// Makes an AirPlay target and shows the system's picker for it at `anchor`.
-    fn open(&self, anchor: Anchor, events: EventSink) -> Arc<dyn AirPlayTarget>;
+    /// Makes an AirPlay target. With a `device` name it plays there; without
+    /// one, or if that device cannot be reached that way, the system's picker
+    /// opens at `anchor` to choose.
+    fn open(
+        &self,
+        anchor: Anchor,
+        device: Option<String>,
+        events: EventSink,
+    ) -> Arc<dyn AirPlayTarget>;
+    /// Starts finding AirPlay devices ahead of being asked to play on one.
+    fn warm(&self);
 }
 
 pub trait AirPlayTarget: CastTarget {
@@ -339,6 +348,9 @@ impl Caster {
         if self.discovery.is_running() {
             return;
         }
+        if let Some(airplay) = &self.airplay {
+            airplay.warm();
+        }
         let me = self.me.clone();
         self.discovery.start(Arc::new(move || {
             if let Some(caster) = me.upgrade() {
@@ -387,10 +399,13 @@ impl Caster {
     }
 
     /// Casts to a Google Cast device.
-    pub fn start(&self, device_id: &str) -> AppResult<()> {
+    pub fn start(&self, device_id: &str, anchor: Anchor) -> AppResult<()> {
         let found = self.discovery.find(device_id).ok_or_else(|| {
             AppError::NotFound("that device is no longer on the network".to_owned())
         })?;
+        if found.device.protocol == CastProtocol::AirPlay {
+            return self.open_airplay(anchor, Some(found.device));
+        }
         let source = self.open_source()?;
         if is_address(&source) && !source.starts_with("http") {
             return Err(AppError::Invalid("this can't be cast".to_owned()));
@@ -446,10 +461,6 @@ impl Caster {
     /// Opens the AirPlay picker of macOS at `anchor`. Choosing a device
     /// there starts casting; choosing this Mac stops it.
     pub fn choose_airplay(&self, anchor: Anchor) -> AppResult<()> {
-        let host = self
-            .airplay
-            .clone()
-            .ok_or_else(|| AppError::Invalid("AirPlay is not available".to_owned()))?;
         let existing = self
             .inner
             .lock()
@@ -460,6 +471,16 @@ impl Caster {
             airplay.show_picker(anchor);
             return Ok(());
         }
+        self.open_airplay(anchor, None)
+    }
+
+    /// Starts an AirPlay session: on `device` if one was chosen from the list,
+    /// otherwise through the system's picker.
+    fn open_airplay(&self, anchor: Anchor, device: Option<CastDevice>) -> AppResult<()> {
+        let host = self
+            .airplay
+            .clone()
+            .ok_or_else(|| AppError::Invalid("AirPlay is not available".to_owned()))?;
         let source = self.open_source()?;
         if is_address(&source) && !source.starts_with("http") {
             return Err(AppError::Invalid("this can't be cast".to_owned()));
@@ -471,21 +492,30 @@ impl Caster {
             inner.generation += 1;
             inner.generation
         };
-        let target = host.open(anchor, self.sink(generation));
+        let target = host.open(
+            anchor,
+            device.as_ref().map(|device| device.name.clone()),
+            self.sink(generation),
+        );
         {
+            let chosen = device.is_some();
             let mut session = Session::new(
                 generation,
-                CastDevice {
+                device.unwrap_or_else(|| CastDevice {
                     id: "airplay".to_owned(),
                     name: "AirPlay".to_owned(),
                     model: String::new(),
                     protocol: CastProtocol::AirPlay,
                     video: true,
-                },
+                }),
                 Profile::AirPlay,
                 position,
             );
-            session.phase = CastPhase::Choosing;
+            session.phase = if chosen {
+                CastPhase::Connecting
+            } else {
+                CastPhase::Choosing
+            };
             let as_target: Arc<dyn CastTarget> = target.clone();
             session.target = Some(as_target);
             session.airplay = Some(target);
@@ -610,7 +640,8 @@ impl Caster {
                         if let Some(name) = name.filter(|name| !name.is_empty()) {
                             session.device.name = name;
                         }
-                        let was = session.phase == CastPhase::Choosing;
+                        // AirPlay: the TV has taken the film, from the picker or the list.
+                        let was = session.profile == Profile::AirPlay && !session.remote;
                         session.phase = CastPhase::Casting;
                         was
                     })
@@ -922,7 +953,8 @@ impl Caster {
             // starts the film on the TV.
             let autoplay = if session.finished {
                 true
-            } else if session.phase == CastPhase::Choosing {
+            } else if session.profile == Profile::AirPlay && !session.remote {
+                // Not until the TV has it, or it would play out of the Mac.
                 false
             } else if resume {
                 playing

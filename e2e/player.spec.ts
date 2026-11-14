@@ -506,7 +506,8 @@ test.describe("keyboard", () => {
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowLeft");
     expect(await calls(page, "playerSeekBy")).toEqual([{ seconds: 5 }, { seconds: -5 }]);
-    await expect(osdLabel(page, "Back 5 s")).toBeVisible();
+    // Quietly: the picture jumping is the answer (asked for, 2026-11-14).
+    await expect(page.locator("[data-osd]")).toBeEmpty();
 
     await page.keyboard.press("ArrowUp");
     await expect(page.getByText("105%")).toBeVisible();
@@ -526,7 +527,7 @@ test.describe("keyboard", () => {
     await page.keyboard.press("l");
     await page.keyboard.press("j");
     await page.keyboard.press("Shift+ArrowRight");
-    await expect(osdLabel(page, "Forward 1 min")).toBeVisible();
+    await expect(page.locator("[data-osd]")).toBeEmpty();
     await page.keyboard.press("Shift+ArrowLeft");
     expect(await calls(page, "playerSeekBy")).toEqual([
       { seconds: 10 },
@@ -539,10 +540,10 @@ test.describe("keyboard", () => {
     expect((await calls(page, "playerSeekTo")).at(-1)).toEqual({ seconds: 0, exact: true });
   });
 
-  test("says what really happened when there is nothing left to seek", async ({ page }) => {
+  test("says why only when there is nothing left to seek", async ({ page }) => {
     await openFilm(page, { position: TWO_HOURS - 2 });
     await page.keyboard.press("ArrowRight");
-    await expect(osdLabel(page, "Forward 2 s")).toBeVisible();
+    await expect(page.locator("[data-osd]")).toBeEmpty();
     await page.keyboard.press("ArrowRight");
     await expect(osdLabel(page, "At the end")).toBeVisible();
   });
@@ -904,8 +905,8 @@ test.describe("on-screen display", () => {
   test("the widest message fits the smallest window without being cut short", async ({ page }) => {
     await page.setViewportSize({ width: 560, height: 360 });
     await openFilm(page);
-    await page.keyboard.press("ArrowRight");
-    const label = osdLabel(page, "Forward 5 s");
+    await page.keyboard.press("ArrowUp");
+    const label = osdLabel(page, "Volume");
     const line = label.locator("xpath=ancestor::p[1]");
     const rect = await box(line);
     expect(rect.x).toBeGreaterThanOrEqual(GUTTER);
@@ -1016,12 +1017,12 @@ test.describe("when a command fails", () => {
 });
 
 test.describe("the picture", () => {
-  test("a click pauses, after waiting to see it is not a double-click", async ({ page }) => {
+  test("a click does nothing: Space, K and the Play button pause", async ({ page }) => {
     await openFilm(page, { paused: false });
     await page.mouse.click(560, 300);
+    await page.waitForTimeout(400);
     expect(await calls(page, "playerTogglePaused")).toHaveLength(0);
-    await expect(playButton(page)).toBeVisible();
-    expect(await calls(page, "playerTogglePaused")).toHaveLength(1);
+    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
   });
 
   test("a double-click toggles full screen and does not pause", async ({ page }) => {
@@ -1033,34 +1034,13 @@ test.describe("the picture", () => {
     await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
   });
 
-  test("a slow double-click still goes to full screen, and leaves the film playing", async ({
-    page,
-  }) => {
+  test("a click, then later a double-click, only goes to full screen", async ({ page }) => {
     await openFilm(page, { paused: false });
     await page.mouse.click(560, 300);
-    // Slower than the grace: the first click has already paused the film.
-    await expect(playButton(page)).toBeVisible();
-    // The second press of the same double-click. (`click` with a count of two
-    // would send a fresh pair of presses, which is a different gesture.)
-    await page.mouse.down({ clickCount: 2 });
-    await page.mouse.up({ clickCount: 2 });
-
-    await expect(page.getByRole("button", { name: "Exit full screen" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
-    // The pause was undone quietly: nothing is left on screen about it.
-    await expect(page.locator("[data-osd]")).toBeEmpty();
-  });
-
-  test("a click, then later a double-click, are two requests", async ({ page }) => {
-    await openFilm(page, { paused: false });
-    await page.mouse.click(560, 300);
-    await expect(playButton(page)).toBeVisible();
     await page.waitForTimeout(700);
     await page.mouse.dblclick(560, 300);
     await expect(page.getByRole("button", { name: "Exit full screen" })).toBeVisible();
-    await page.waitForTimeout(300);
-    // The film stays paused, and goes to full screen.
-    await expect(playButton(page)).toBeVisible();
+    expect(await calls(page, "playerTogglePaused")).toHaveLength(0);
   });
 
   test("a file held over it is announced in the middle, clear of every control", async ({

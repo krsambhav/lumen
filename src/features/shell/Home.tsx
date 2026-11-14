@@ -46,10 +46,17 @@ export function Home({ dropping, failure = null }: HomeProps) {
         history
           ? "scrollbar-thin overflow-y-auto pb-8 pt-6"
           : // A little above the middle: the bottom padding is a tenth of the height more than the title bar's.
-            "justify-center pb-[calc(10vh+var(--titlebar-h))]",
+            "pb-[calc(10vh+var(--titlebar-h))]",
       )}
     >
-      <div className="flex flex-none animate-fade-in flex-col items-start">
+      {/*
+        Centred by its own auto margins rather than by the column: in a
+        window too short for it, it then starts at the top, under the title
+        bar, instead of being pushed up beneath it.
+      */}
+      <div
+        className={cn("flex flex-none animate-fade-in flex-col items-start", !history && "my-auto")}
+      >
         <Ruler />
         <h2 className="mt-8 text-display text-ink-1">
           {dropping ? "Release to play" : "Drop a file to play"}

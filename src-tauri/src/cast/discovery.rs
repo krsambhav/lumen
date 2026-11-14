@@ -1,7 +1,7 @@
-//! Finding Google Cast devices on the local network, by multicast DNS.
-//!
-//! AirPlay devices are not looked for here: macOS lists them itself, in its
-//! own picker, which also handles their passwords and codes.
+//! Finding cast devices on the local network, by multicast DNS: Google
+//! Cast devices, and AirPlay receivers (Apple TVs, TVs with AirPlay, other
+//! Macs). An AirPlay device found here is only a name to offer; playing on
+//! it goes through AVFoundation, which finds it again by that name.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -13,6 +13,109 @@ use parking_lot::Mutex;
 use super::CastDevice;
 
 const GOOGLE_CAST: &str = "_googlecast._tcp.local.";
+const AIRPLAY: &str = "_airplay._tcp.local.";
+
+/// Reads an AirPlay receiver's TXT record into a device. `own` is this Mac's
+/// name, which is not offered: a Mac cannot AirPlay to itself.
+pub fn airplay_from(
+    fullname: &str,
+    property: impl Fn(&str) -> Option<String>,
+    addresses: &[IpAddr],
+    port: u16,
+    own: &str,
+) -> Option<Found> {
+    let name = fullname
+        .strip_suffix(&format!(".{AIRPLAY}"))?
+        .replace("\\.", ".");
+    let name = name.trim().to_owned();
+    if name.is_empty() || name.eq_ignore_ascii_case(own.trim()) {
+        return None;
+    }
+    // The features are a 64-bit mask, written as two 32-bit halves; bit 0 is video.
+    let features = property("features").and_then(|text| {
+        let mut halves = text
+            .split(',')
+            .map(|half| u64::from_str_radix(half.trim().trim_start_matches("0x"), 16).ok());
+        let low = halves.next()??;
+        let high = halves.next().flatten().unwrap_or(0);
+        Some(low | (high << 32))
+    });
+    let video = features.is_none_or(|bits| bits & 1 == 1);
+    let model = property("model").unwrap_or_default();
+    let id = property("deviceid").unwrap_or_else(|| name.clone());
+    let address = addresses
+        .iter()
+        .find(|ip| ip.is_ipv4())
+        .or_else(|| addresses.first())
+        .copied()?;
+    Some(Found {
+        device: CastDevice {
+            id: format!("airplay:{id}"),
+            name,
+            model: airplay_kind(&model).to_owned(),
+            protocol: super::CastProtocol::AirPlay,
+            video,
+        },
+        address: SocketAddr::new(address, port),
+        hevc: true,
+    })
+}
+
+/// What an AirPlay receiver is, from its model identifier.
+fn airplay_kind(model: &str) -> &str {
+    if model.starts_with("AppleTV") {
+        "Apple TV"
+    } else if model.starts_with("AudioAccessory") {
+        "HomePod"
+    } else if model.starts_with("Mac") || model.starts_with("iMac") {
+        "Mac"
+    } else if model.is_empty() {
+        "AirPlay"
+    } else {
+        "TV"
+    }
+}
+
+/// This Mac's name, as it announces itself.
+fn own_name() -> String {
+    std::process::Command::new("/usr/sbin/scutil")
+        .args(["--get", "ComputerName"])
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .unwrap_or_default()
+}
+
+type Reader = fn(&mdns_sd::ResolvedService, &str) -> Option<Found>;
+
+fn read_cast(service: &mdns_sd::ResolvedService, _own: &str) -> Option<Found> {
+    let addresses: Vec<IpAddr> = service
+        .get_addresses()
+        .iter()
+        .map(|ip| ip.to_ip_addr())
+        .collect();
+    device_from(
+        service.get_fullname(),
+        |key| service.get_property_val_str(key).map(str::to_owned),
+        &addresses,
+        service.get_port(),
+    )
+}
+
+fn read_airplay(service: &mdns_sd::ResolvedService, own: &str) -> Option<Found> {
+    let addresses: Vec<IpAddr> = service
+        .get_addresses()
+        .iter()
+        .map(|ip| ip.to_ip_addr())
+        .collect();
+    airplay_from(
+        service.get_fullname(),
+        |key| service.get_property_val_str(key).map(str::to_owned),
+        &addresses,
+        service.get_port(),
+        own,
+    )
+}
 
 /// A Cast device as found, with where to reach it.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,56 +180,63 @@ impl Discovery {
         if daemon.is_some() {
             return;
         }
-        let started = ServiceDaemon::new().and_then(|d| d.browse(GOOGLE_CAST).map(|r| (d, r)));
-        let (service, events) = match started {
-            Ok(started) => started,
+        let service = match ServiceDaemon::new() {
+            Ok(service) => service,
             Err(error) => {
                 tracing::warn!(%error, "could not look for cast devices");
                 return;
             }
         };
-        *daemon = Some(service);
-        let found = self.found.clone();
-        let spawned = std::thread::Builder::new()
-            .name("lumen-cast-discovery".to_owned())
-            .spawn(move || {
-                // Fullnames to device ids, so a removal can be matched.
-                let mut names: HashMap<String, String> = HashMap::new();
-                while let Ok(event) = events.recv() {
-                    match event {
-                        ServiceEvent::ServiceResolved(service) => {
-                            let addresses: Vec<IpAddr> =
-                                service.get_addresses().iter().map(|ip| ip.to_ip_addr()).collect();
-                            let Some(device) = device_from(
-                                service.get_fullname(),
-                                |key| service.get_property_val_str(key).map(str::to_owned),
-                                &addresses,
-                                service.get_port(),
-                            ) else {
-                                continue;
-                            };
-                            names.insert(service.get_fullname().to_owned(), device.device.id.clone());
-                            let fresh = found.lock().insert(device.device.id.clone(), device.clone());
-                            if fresh.as_ref() != Some(&device) {
-                                tracing::info!(name = %device.device.name, model = %device.device.model, address = %device.address, "found a cast device");
-                                changed();
-                            }
-                        }
-                        ServiceEvent::ServiceRemoved(_, fullname) => {
-                            if let Some(id) = names.remove(&fullname) {
-                                if found.lock().remove(&id).is_some() {
+        let own: Arc<str> = own_name().into();
+        for (kind, reader) in [
+            (GOOGLE_CAST, read_cast as Reader),
+            (AIRPLAY, read_airplay as Reader),
+        ] {
+            let events = match service.browse(kind) {
+                Ok(events) => events,
+                Err(error) => {
+                    tracing::warn!(%error, kind, "could not look for cast devices");
+                    continue;
+                }
+            };
+            let found = self.found.clone();
+            let changed = changed.clone();
+            let own = own.clone();
+            let spawned = std::thread::Builder::new()
+                .name("lumen-cast-discovery".to_owned())
+                .spawn(move || {
+                    // Fullnames to device ids, so a removal can be matched.
+                    let mut names: HashMap<String, String> = HashMap::new();
+                    while let Ok(event) = events.recv() {
+                        match event {
+                            ServiceEvent::ServiceResolved(service) => {
+                                let Some(device) = reader(&service, &own) else {
+                                    continue;
+                                };
+                                names.insert(service.get_fullname().to_owned(), device.device.id.clone());
+                                let fresh = found.lock().insert(device.device.id.clone(), device.clone());
+                                if fresh.as_ref() != Some(&device) {
+                                    tracing::info!(name = %device.device.name, model = %device.device.model, address = %device.address, "found a cast device");
                                     changed();
                                 }
                             }
+                            ServiceEvent::ServiceRemoved(_, fullname) => {
+                                if let Some(id) = names.remove(&fullname) {
+                                    if found.lock().remove(&id).is_some() {
+                                        changed();
+                                    }
+                                }
+                            }
+                            ServiceEvent::SearchStopped(_) => break,
+                            _ => {}
                         }
-                        ServiceEvent::SearchStopped(_) => break,
-                        _ => {}
                     }
-                }
-            });
-        if let Err(error) = spawned {
-            tracing::warn!(%error, "could not look for cast devices");
+                });
+            if let Err(error) = spawned {
+                tracing::warn!(%error, "could not look for cast devices");
+            }
         }
+        *daemon = Some(service);
     }
 
     pub fn is_running(&self) -> bool {
@@ -201,6 +311,48 @@ mod tests {
         .unwrap();
         assert!(!found.device.video);
         assert!(!found.hevc);
+    }
+
+    #[test]
+    fn reads_an_apple_tv_and_leaves_out_this_mac_and_a_homepod_s_picture() {
+        let ip: IpAddr = "192.168.1.50".parse().unwrap();
+        let tv = airplay_from(
+            "Living Room._airplay._tcp.local.",
+            txt(&[
+                ("model", "AppleTV14,1"),
+                ("features", "0x5A7FFFF7,0x1E"),
+                ("deviceid", "AA:BB"),
+            ]),
+            &[ip],
+            7000,
+            "Kumar’s MacBook Pro",
+        )
+        .unwrap();
+        assert_eq!(tv.device.name, "Living Room");
+        assert_eq!(tv.device.id, "airplay:AA:BB");
+        assert_eq!(tv.device.model, "Apple TV");
+        assert!(tv.device.video);
+        let speaker = airplay_from(
+            "Kitchen._airplay._tcp.local.",
+            txt(&[
+                ("model", "AudioAccessory5,1"),
+                ("features", "0x4A7FCA00,0xBC354BD0"),
+            ]),
+            &[ip],
+            7000,
+            "Mac",
+        )
+        .unwrap();
+        assert!(!speaker.device.video);
+        assert_eq!(speaker.device.model, "HomePod");
+        assert!(airplay_from(
+            "Kumar’s MacBook Pro._airplay._tcp.local.",
+            txt(&[("model", "Mac15,9")]),
+            &[ip],
+            7000,
+            "Kumar’s MacBook Pro"
+        )
+        .is_none());
     }
 
     #[test]

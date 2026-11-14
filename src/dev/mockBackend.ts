@@ -124,6 +124,21 @@ const MOCK_TORRENTS: { result: TorrentResult; files: TorrentFile[] }[] = [
     files: [{ index: 0, name: "The Long Take OST.zip", size: 641_728_512, playable: false }],
   },
 ];
+MOCK_TORRENTS.push({
+  result: {
+    name: "MobLand S02E10 Song for the Dead 720p AMZN WEB-DL DDP5 1 H 264-RAWR",
+    hash: "d".repeat(40),
+    magnet: `magnet:?xt=urn:btih:${"d".repeat(40)}`,
+    size: "1.4 GB",
+    seeders: 862,
+    leechers: 31,
+    uploaded: "2026-11-02",
+    category: "Video",
+    trusted: false,
+    ready: true,
+  },
+  files: [{ index: 0, name: "MobLand.S02E10.720p.mkv", size: 1_503_238_553, playable: true }],
+});
 /** How far each mock torrent asked for has come, by id. */
 const torrentPolls = new Map<string, number>();
 
@@ -285,6 +300,8 @@ export function installMockBackend(): LumenMock {
       protocol: "chromecast",
       video: true,
     },
+    { id: "airplay:den", name: "Den", model: "Apple TV", protocol: "airPlay", video: true },
+    { id: "airplay:kitchen", name: "Kitchen", model: "HomePod", protocol: "airPlay", video: false },
   ];
 
   // The subtitle sync: the model is downloaded the first time, then eight
@@ -852,7 +869,7 @@ export function installMockBackend(): LumenMock {
         ...cast,
         session: {
           device: device.name,
-          protocol: "chromecast",
+          protocol: device.protocol,
           phase: "connecting",
           delivery: null,
         },
@@ -863,7 +880,7 @@ export function installMockBackend(): LumenMock {
             ...cast,
             session: {
               device: device.name,
-              protocol: "chromecast",
+              protocol: device.protocol,
               phase: "casting",
               delivery: "remux",
             },

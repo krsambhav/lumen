@@ -19,6 +19,7 @@ import { usePalette } from "@/features/palette/store";
 import { confirm, NOTHING_OPEN, needsMedia } from "@/features/player/actions";
 import { hasMedia, usePlayer } from "@/features/player/store";
 import { useInterface } from "@/features/shell/interface";
+import { nextEpisodeSearch } from "@/features/torrents/nextEpisode";
 import { commands, type InspectorTab, type QueueItem, type Repeat as RepeatMode } from "@/ipc";
 import { notifyFailure, send, undoable } from "@/lib/notify";
 import { hasSeveral, useQueue } from "./store";
@@ -169,6 +170,29 @@ export const playlistActions: readonly Action[] = [
     shortcuts: ["Cmd+f"],
     // What is playing goes on playing while the search is open.
     run: () => usePalette.getState().show("torrents"),
+  },
+  {
+    id: "file.nextEpisode",
+    name: "Find next episode",
+    // Named for what it will search: "Find MobLand S02E10".
+    label: () => {
+      const query = nextEpisodeSearch(usePlayer.getState().title);
+      return query === null ? "Find next episode" : `Find ${query}`;
+    },
+    keywords: ["next episode", "episode", "series", "season", "torrent", "following"],
+    category: "file",
+    icon: SkipForward,
+    shortcuts: ["Shift+Cmd+f"],
+    unavailable: () =>
+      nextEpisodeSearch(usePlayer.getState().title) === null
+        ? "What is playing is not an episode"
+        : undefined,
+    run: () => {
+      const query = nextEpisodeSearch(usePlayer.getState().title);
+      if (query !== null) {
+        usePalette.getState().show("torrents", query);
+      }
+    },
   },
   {
     id: "file.add",

@@ -2,11 +2,13 @@ import { Command } from "cmdk";
 import {
   ArrowDownToLine,
   ArrowLeft,
+  ChevronsRight,
   CircleAlert,
   Eraser,
   History,
   Magnet,
   Search,
+  SkipForward,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PlayGlyph } from "@/components/ui/glyphs";
@@ -17,6 +19,7 @@ import { hasMedia, usePlayer } from "@/features/player/store";
 import type { TorrentFile, TorrentResult } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { describeState, formatBytes, formatSeeds, formatSpeed } from "./format";
+import { nextEpisodeSearch, nextSeasonSearch } from "./nextEpisode";
 import { type Fetching, type Intent, playableFiles, useTorrents } from "./store";
 
 /** How many recent searches the command palette shows before anything is typed. */
@@ -447,19 +450,27 @@ export function TorrentFinder() {
             }
           />
         ) : typed === "" ? (
-          <RecentSearches
-            limit={undefined}
-            onSearch={(entry) => {
-              setQuery(entry);
-              find(entry);
-            }}
-            empty={
-              <Note>
-                Type the name of a film, a show or an album, and press Return. Only what plays at
-                once is listed; anything Lumen does not play opens in the browser to download.
-              </Note>
-            }
-          />
+          <>
+            <NextEpisodeRow
+              onSearch={(next) => {
+                setQuery(next);
+                find(next);
+              }}
+            />
+            <RecentSearches
+              limit={undefined}
+              onSearch={(entry) => {
+                setQuery(entry);
+                find(entry);
+              }}
+              empty={
+                <Note>
+                  Type the name of a film, a show or an album, and press Return. Only what plays at
+                  once is listed; anything Lumen does not play opens in the browser to download.
+                </Note>
+              }
+            />
+          </>
         ) : !searched ? (
           <Command.Group className={GROUP}>
             <Command.Item value="torrent:search" onSelect={() => find(typed)} className={ROW}>
@@ -497,6 +508,33 @@ export function TorrentFinder() {
         )}
       </Command.List>
     </Command>
+  );
+}
+
+/**
+ * While an episode plays: rows that search for the one after it, and for
+ * the next season's first, in case this was the season's last.
+ */
+function NextEpisodeRow({ onSearch }: { onSearch: (query: string) => void }) {
+  const title = usePlayer((state) => state.title);
+  const next = nextEpisodeSearch(title);
+  const season = nextSeasonSearch(title);
+  if (next === null || season === null) {
+    return null;
+  }
+  return (
+    <Command.Group heading="Next episode" className={GROUP}>
+      <Command.Item value="torrent:next-episode" onSelect={() => onSearch(next)} className={ROW}>
+        <SkipForward aria-hidden="true" className="size-4 flex-none text-ink-2" />
+        <span className="min-w-0 flex-1 truncate">Find {next}</span>
+        <Shortcut chord="Shift+Cmd+f" className="flex-none text-caption text-ink-3" />
+      </Command.Item>
+      <Command.Item value="torrent:next-season" onSelect={() => onSearch(season)} className={ROW}>
+        <ChevronsRight aria-hidden="true" className="size-4 flex-none text-ink-2" />
+        <span className="min-w-0 flex-1 truncate">Find {season}</span>
+        <span className="flex-none whitespace-nowrap text-caption text-ink-3">Next season</span>
+      </Command.Item>
+    </Command.Group>
   );
 }
 
@@ -550,7 +588,12 @@ export function TorrentsInPalette({ query }: { query: string }) {
   const typed = query.trim();
   const search = (text: string) => usePalette.getState().show("torrents", text);
   if (typed === "") {
-    return <RecentSearches limit={RECENT_IN_PALETTE} onSearch={search} />;
+    return (
+      <>
+        <NextEpisodeRow onSearch={search} />
+        <RecentSearches limit={RECENT_IN_PALETTE} onSearch={search} />
+      </>
+    );
   }
   if (typed.length < PALETTE_MIN_CHARS) {
     return null;
