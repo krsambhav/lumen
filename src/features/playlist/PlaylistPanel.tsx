@@ -10,7 +10,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { Ellipsis, Repeat, Repeat1, Shuffle, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListBox, type ListBoxHandle, type OptionProps } from "@/components/ui/list-box";
@@ -28,10 +28,12 @@ import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { PopoverAnchor } from "@/components/ui/popover";
 import { useSurfaceClass } from "@/components/ui/surface";
 import { Tooltip } from "@/components/ui/tooltip";
+import { readEpisodeTitle } from "@/features/library/title";
 import { ActionButton } from "@/features/player/ActionButton";
 import { Timecode } from "@/features/player/Timecode";
 import { failedLabel, nameOf } from "@/features/shell/failure";
 import { registerPlaylistDropZone } from "@/features/shell/useFileDrop";
+import { episodeOf } from "@/features/torrents/episode";
 import { commands, type QueueItem } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { send } from "@/lib/notify";
@@ -44,9 +46,36 @@ import { usePlaylistUi } from "./ui";
 
 const ROW_HEIGHT = 28;
 
+/**
+ * The show every item is an episode of, if they all are of one: the list
+ * is then headed by it, and its rows need not repeat it.
+ */
+function showOf(titles: readonly string[]): string | null {
+  const shows = titles.map((title) => episodeOf(title)?.show ?? null);
+  const first = shows[0];
+  // "The Americans (2013)" and "The.Americans.2013" are one show.
+  const key = (show: string | null | undefined) =>
+    show?.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  if (!first || shows.some((show) => key(show) !== key(first))) {
+    return null;
+  }
+  return first;
+}
+
+/** How a row names an item: its episode and the episode's own name, when the name says which. */
+function rowName(title: string): { episode: string | null; name: string } {
+  const read = readEpisodeTitle(title);
+  if (!read) {
+    return { episode: null, name: title };
+  }
+  // A release name with nothing after the number ("MobLand.S02E05.1080p…") is named by it.
+  return { episode: read.episode, name: read.name || `Episode ${read.episode.split("E")[1]}` };
+}
+
 /** The playlist's name, how much is in it, and the controls that act on all of it. */
 function Header() {
   const name = useQueue((state) => state.name);
+  const show = useQueue((state) => showOf(state.items.map((item) => item.title)));
   const repeat = useQueue((state) => state.repeat);
   const shuffle = useQueue((state) => state.shuffle);
   const length = useQueue((state) => state.items.length);
@@ -68,7 +97,8 @@ function Header() {
       <div className="flex min-h-10 min-w-0 flex-1 flex-col justify-center">
         {/* Its name if it has one; else the tab's, as every tab is headed (DESIGN.md §7). */}
         <h2 className="flex min-w-0 text-heading text-ink-1">
-          <MiddleTruncate text={name ?? "Playlist"} />
+          {/* Else the show it is all episodes of, which the rows then leave out. */}
+          <MiddleTruncate text={name ?? show ?? "Playlist"} />
         </h2>
         <p className="tabular truncate text-caption text-ink-2">{summary}</p>
       </div>
@@ -146,6 +176,7 @@ function Cells({
   item,
   index,
   digits,
+  episodes,
   current,
   removable,
 }: {
@@ -153,10 +184,13 @@ function Cells({
   index: number;
   /** How many figures the longest place in the list has. */
   digits: number;
+  /** How many characters the longest episode number in the list has ("S2 E10"), or 0 for none. */
+  episodes: number;
   current: boolean;
   /** Under the pointer the length gives way to the control that removes the row. */
   removable: boolean;
 }) {
+  const named = episodes > 0 ? rowName(item.title) : { episode: null, name: item.title };
   return (
     <span aria-hidden="true" className="flex min-w-0 flex-1 items-center gap-2 px-2">
       {/*
@@ -174,9 +208,24 @@ function Cells({
           index + 1
         )}
       </span>
+      {/*
+        An episode is told apart by its number and its own name, which a
+        release name buries mid-way ("The Americans (2013) - S02E06 - Behind
+        the Red Door (1080p …)"): the number gets a column of its own, as
+        wide as the longest in the list, and the name follows it.
+      */}
+      {episodes > 0 ? (
+        <span
+          className="tabular flex-none whitespace-nowrap text-caption text-ink-2"
+          style={{ width: `${episodes + 0.5}ch` }}
+        >
+          {named.episode}
+        </span>
+      ) : null}
       <MiddleTruncate
-        text={item.title}
-        full={nameOf(item.source)}
+        text={named.name}
+        // The whole name when it is cut: the release's, or for a file its file name.
+        full={item.source.includes("://") ? item.title : nameOf(item.source)}
         className={cn(
           "flex-1",
           current && "font-semibold",
@@ -237,13 +286,14 @@ interface RowProps {
   item: QueueItem;
   index: number;
   digits: number;
+  episodes: number;
   current: boolean;
   option: OptionProps;
   dragging: boolean;
 }
 
 /** One item of the playlist: where it is in the list, what it is, how long it runs. */
-function Row({ item, index, digits, current, option, dragging }: RowProps) {
+function Row({ item, index, digits, episodes, current, option, dragging }: RowProps) {
   const drag = useDraggable({ id: item.id });
   const drop = useDroppable({ id: item.id });
   const local = !item.source.includes("://");
@@ -294,7 +344,14 @@ function Row({ item, index, digits, current, option, dragging }: RowProps) {
             .filter(Boolean)
             .join(", ")}
         </span>
-        <Cells item={item} index={index} digits={digits} current={current} removable />
+        <Cells
+          item={item}
+          index={index}
+          digits={digits}
+          episodes={episodes}
+          current={current}
+          removable
+        />
       </div>
     </ContextMenuArea>
   );
@@ -371,6 +428,14 @@ export function PlaylistPanel() {
   const line = dragged !== null ? target : dropIndex;
   const held = items.find((item) => item.id === dragged);
   const digits = String(items.length).length;
+  // Only a list that is all one show's episodes trades its names for their numbers.
+  const episodes = useMemo(
+    () =>
+      showOf(items.map((item) => item.title)) === null
+        ? 0
+        : Math.max(...items.map((item) => rowName(item.title).episode?.length ?? 0)),
+    [items],
+  );
   const surfaceClass = useSurfaceClass();
 
   return (
@@ -408,6 +473,7 @@ export function PlaylistPanel() {
               item={item}
               index={state.index}
               digits={digits}
+              episodes={episodes}
               current={item.id === current}
               option={option}
               dragging={item.id === dragged}
@@ -434,6 +500,7 @@ export function PlaylistPanel() {
                   item={held}
                   index={items.indexOf(held)}
                   digits={digits}
+                  episodes={episodes}
                   current={held.id === current}
                   removable={false}
                 />

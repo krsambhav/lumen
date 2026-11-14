@@ -112,6 +112,21 @@ fn choosing_an_episode_queues_it_and_those_after_it() {
 }
 
 #[test]
+fn playing_a_file_makes_the_whole_torrent_the_playlist_starting_there() {
+    let files = [
+        file(0, "Show.S01E10.mkv"),
+        file(1, "Show.S01E02.mkv"),
+        file(2, "Show.S01E01.mkv"),
+        file(3, "notes.txt"),
+    ];
+    let (list, start) = playlist_of(&files, 1);
+    let order: Vec<_> = list.iter().map(|file| file.index).collect();
+    // Every playable file, in a person's order: the episodes before it are kept too.
+    assert_eq!(order, [2, 1, 0]);
+    assert_eq!(start, 1);
+}
+
+#[test]
 fn ids_and_addresses_are_checked() {
     let torrents = Torrents::new("https://example.test/");
     let id = "tb-c39fe3eefbdb62da9c27eb6398ff4a7d2e26e7ab";

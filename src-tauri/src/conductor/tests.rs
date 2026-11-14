@@ -1044,3 +1044,21 @@ fn another_item_of_a_recent_playlist_can_be_chosen_to_play() {
     rig.conductor.open_recent(A, Some("/elsewhere.mkv"), true).unwrap();
     assert_eq!(rig.current().as_deref(), Some("a"));
 }
+
+#[test]
+fn a_named_list_can_start_part_way_and_keep_what_comes_before() {
+    let rig = Rig::new();
+    rig.conductor
+        .open_titled_at(
+            vec![
+                (A.to_owned(), "one".to_owned()),
+                (B.to_owned(), "two".to_owned()),
+                (C.to_owned(), "three".to_owned()),
+            ],
+            1,
+        )
+        .unwrap();
+    assert_eq!(rig.titles(), ["one", "two", "three"]);
+    assert_eq!(rig.current().as_deref(), Some("two"));
+    assert!(matches!(rig.last_open(), Call::Open { source, .. } if source == B));
+}

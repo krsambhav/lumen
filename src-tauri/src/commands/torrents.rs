@@ -56,8 +56,9 @@ async fn items_from(torrents: &Torrents, id: &str, index: u32) -> AppResult<Vec<
     Ok(items)
 }
 
-/// Plays a file of a fetched torrent in place of the playlist, with the
-/// playable files after it.
+/// Plays a file of a fetched torrent in place of the playlist. The playlist
+/// is the whole torrent (every playable file, in order), starting at the
+/// one chosen, so the episodes before it are there as well as those after.
 #[tauri::command]
 #[specta::specta]
 pub async fn torrents_play(
@@ -66,8 +67,22 @@ pub async fn torrents_play(
     id: String,
     index: u32,
 ) -> AppResult<()> {
-    let items = items_from(&torrents, &id, index).await?;
-    state.conductor.open_titled(items)
+    let TorrentProgress::Ready { files, .. } = torrents.status(&id).await? else {
+        return Err(AppError::Invalid(
+            "that torrent is not ready yet".to_owned(),
+        ));
+    };
+    let (files, start) = torrents::playlist_of(&files, index);
+    let items = files
+        .into_iter()
+        .map(|file| Ok((torrents.address(&id, file.index)?, torrents::title_of(file))))
+        .collect::<AppResult<Vec<_>>>()?;
+    if items.is_empty() {
+        return Err(AppError::NotFound(
+            "that file is not in the torrent".to_owned(),
+        ));
+    }
+    state.conductor.open_titled_at(items, start)
 }
 
 /// Puts a file of a fetched torrent (and the playable files after it) next

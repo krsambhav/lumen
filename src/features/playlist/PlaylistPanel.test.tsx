@@ -84,6 +84,55 @@ describe("the header", () => {
     expect(screen.getByText("3 items · 1 h 15 min")).toHaveClass("text-caption");
   });
 
+  it("tells one show's episodes apart by their numbers and their own names", () => {
+    const release = (code: string, name: string) =>
+      `The Americans (2013) - ${code} - ${name} (1080p AMZN WEB-DL x265 Silence)`;
+    useQueue.setState(
+      {
+        ...QUEUE,
+        items: [
+          {
+            id: 1,
+            source: "https://x/dl/1",
+            title: release("S02E05", "Martial Eagle"),
+            duration: 2700,
+            failed: null,
+          },
+          {
+            id: 2,
+            source: "https://x/dl/2",
+            title: release("S02E06", "Behind the Red Door"),
+            duration: 2700,
+            failed: null,
+          },
+          {
+            id: 3,
+            source: "https://x/dl/3",
+            title: "The.Americans.2013.S02E10.1080p.WEB.H264",
+            duration: 2700,
+            failed: null,
+          },
+        ],
+      },
+      true,
+    );
+    renderUi(<PlaylistPanel />);
+    // Headed by the show, which the rows then leave out.
+    expect(screen.getByRole("heading", { name: "The Americans (2013)" })).toBeInTheDocument();
+    const rows = screen.getAllByRole("option");
+    expect(rows[1]).toHaveTextContent(/S2 E6\s*Behind the Red Door/);
+    // What the eye gets leaves the release's quality out; a screen reader still hears the whole name.
+    expect(rows[1]?.querySelector('[aria-hidden="true"]')).not.toHaveTextContent(/1080p/);
+    // A release with nothing after its number is named by it.
+    expect(rows[2]).toHaveTextContent(/S2 E10\s*Episode 10/);
+  });
+
+  it("keeps whole names for a list that is not one show's episodes", () => {
+    renderUi(<PlaylistPanel />);
+    expect(screen.getByRole("heading", { name: "Playlist" })).toBeInTheDocument();
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("Episode 1");
+  });
+
   it("is headed by the saved playlist's name when it has one, with the count beneath", () => {
     useQueue.setState({ name: "Evening" });
     show();

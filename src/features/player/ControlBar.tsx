@@ -1,4 +1,17 @@
-import { Ellipsis, Maximize, Minimize, RotateCcw, Volume1, Volume2, VolumeX } from "lucide-react";
+import {
+  Cast,
+  Ellipsis,
+  Gauge,
+  Languages,
+  Maximize,
+  Minimize,
+  Repeat,
+  Repeat1,
+  RotateCcw,
+  Volume1,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getAction, runAction } from "@/actions/registry";
 import { NextGlyph, PauseGlyph, PlayGlyph, PreviousGlyph, StopGlyph } from "@/components/ui/glyphs";
@@ -310,7 +323,7 @@ function MoreMenu() {
           <>
             <MenuAction action="subtitles.toggle" />
             {hasSubtitles ? (
-              <MenuSub label="Subtitle track" checkable>
+              <MenuSub label="Subtitle track" icon={Languages} checkable>
                 <SubtitleChoices />
               </MenuSub>
             ) : null}
@@ -319,13 +332,13 @@ function MoreMenu() {
         ) : null}
         {narrow ? (
           <>
-            <MenuSub label="Cast" checkable>
+            <MenuSub label="Cast" icon={Cast} checkable>
               <CastChoices open={open} anchor={() => trigger.current?.getBoundingClientRect()} />
             </MenuSub>
             <MenuSeparator />
           </>
         ) : null}
-        <MenuSub label="Speed" checkable>
+        <MenuSub label="Speed" icon={Gauge} checkable>
           <MenuChoice
             label="Speed"
             value={String(marked)}
@@ -336,7 +349,7 @@ function MoreMenu() {
             onChange={(value) => setSpeed({ source: "menu" }, Number(value))}
           />
         </MenuSub>
-        <MenuSub label="Repeat" checkable>
+        <MenuSub label="Repeat" icon={repeat === "one" ? Repeat1 : Repeat} checkable>
           <MenuChoice
             label="Repeat"
             value={repeat}

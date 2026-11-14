@@ -2,6 +2,7 @@ import { Check, ChevronRight } from "lucide-react";
 import { ContextMenu, DropdownMenu } from "radix-ui";
 import {
   type ComponentProps,
+  type ComponentType,
   createContext,
   type KeyboardEvent,
   type PointerEvent,
@@ -216,11 +217,21 @@ const ITEM = cn(
   "data-[highlighted]:bg-surface-3 data-[disabled]:opacity-45",
 );
 
-/** The check's column: a check, or the room one would take. */
-function CheckSlot({ checked }: { checked: boolean }) {
+type Icon = ComponentType<{ className?: string }>;
+
+/**
+ * The leading column: a check for what is on, else the item's icon, else
+ * the room one would take. A switch that is on shows the check in its
+ * icon's place, so the column says both what each item is and what is on.
+ */
+function CheckSlot({ checked, icon: Glyph }: { checked: boolean; icon?: Icon | undefined }) {
   return (
     <span aria-hidden="true" className="flex size-4 flex-none items-center justify-center">
-      {checked ? <Check className="size-4 text-accent" /> : null}
+      {checked ? (
+        <Check className="size-4 text-accent" />
+      ) : Glyph ? (
+        <Glyph className="size-4 text-ink-2" />
+      ) : null}
     </span>
   );
 }
@@ -247,6 +258,8 @@ interface MenuItemProps {
   detail?: string | undefined;
   /** For an item that switches something on and off. Leave undefined for a plain item. */
   checked?: boolean | undefined;
+  /** Its icon, in the leading column; shown only in a menu that keeps that column. */
+  icon?: Icon | undefined;
   /** The destructive choice: its name must say what is destroyed. */
   danger?: boolean;
   disabled?: boolean;
@@ -258,6 +271,7 @@ export function MenuItem({
   shortcut,
   detail,
   checked,
+  icon,
   danger = false,
   disabled = false,
   onSelect,
@@ -267,7 +281,9 @@ export function MenuItem({
   const column = useContext(CheckColumnContext);
   const inner = (
     <>
-      {column || checked !== undefined ? <CheckSlot checked={checked === true} /> : null}
+      {column || checked !== undefined ? (
+        <CheckSlot checked={checked === true} icon={column ? icon : undefined} />
+      ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       <Trailing shortcut={shortcut} detail={detail} />
     </>
@@ -318,6 +334,7 @@ export function MenuAction({ action, label }: MenuActionProps) {
     <MenuItem
       shortcut={entry.shortcuts[0]}
       checked={entry.checked?.()}
+      icon={entry.icon}
       disabled={entry.unavailable?.() !== undefined}
       onSelect={() => runAction(action, "menu")}
     >
@@ -378,6 +395,8 @@ export function MenuLabel({ children }: { children: ReactNode }) {
 interface MenuSubProps {
   /** The name of the item that opens the submenu. */
   label: string;
+  /** Its icon, in the leading column, where the menu keeps one. */
+  icon?: Icon | undefined;
   /** Whether any item inside can be checked. */
   checkable?: boolean;
   disabled?: boolean;
@@ -385,7 +404,13 @@ interface MenuSubProps {
 }
 
 /** A submenu: it opens to the side, never as a second menu over the first. */
-export function MenuSub({ label, checkable = false, disabled = false, children }: MenuSubProps) {
+export function MenuSub({
+  label,
+  icon,
+  checkable = false,
+  disabled = false,
+  children,
+}: MenuSubProps) {
   const Parts = useParts();
   const column = useContext(CheckColumnContext);
   const surfaceClass = useSurfaceClass();
@@ -396,7 +421,7 @@ export function MenuSub({ label, checkable = false, disabled = false, children }
         className={cn(ITEM, "data-[state=open]:bg-surface-3")}
         onPointerLeave={leaveAClosingMenuAlone}
       >
-        {column ? <CheckSlot checked={false} /> : null}
+        {column ? <CheckSlot checked={false} icon={icon} /> : null}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <ChevronRight aria-hidden="true" className="-mr-1 size-4 flex-none text-ink-3" />
       </Parts.SubTrigger>

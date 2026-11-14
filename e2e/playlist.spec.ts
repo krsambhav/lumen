@@ -8,6 +8,7 @@ import {
   GUTTER,
   glide,
   openFilm,
+  openHome,
   openQueue,
   overlap,
   PANEL,
@@ -139,21 +140,28 @@ test.describe("the playlist", () => {
     });
 
     // In every row the name ends before the length begins, however long the name.
+    // One show's episodes: each its number, in a column of its own, then the episode's name.
+    const names: number[] = [];
     for (const option of await options.all()) {
       const cells = option.locator(":scope > span > *");
       const number = await box(cells.nth(0));
-      const name = await box(cells.nth(1));
-      const length = await box(cells.nth(2));
+      const episode = await box(cells.nth(1));
+      const name = await box(cells.nth(2));
+      const length = await box(cells.nth(3));
+      expect(Math.round(episode.x - (number.x + number.width))).toBe(8);
+      expect(Math.round(name.x - (episode.x + episode.width))).toBe(8);
+      names.push(Math.round(name.x));
       // As wide as the longest place needs: one figure here.
       expect(number.width).toBeGreaterThan(6);
       expect(number.width).toBeLessThan(9);
       // 16 px in from the panel's edge, where every list has its lamp.
       expect(number.x).toBe(panel.x + 1 + 16);
       expect(length.width).toBe(56);
-      expect(Math.round(name.x - (number.x + number.width))).toBe(8);
       expect(Math.round(length.x - (name.x + name.width))).toBe(8);
       expect(name.height).toBeLessThanOrEqual(20);
     }
+    // The names start on one line down the list.
+    expect(new Set(names).size).toBe(1);
   });
 
   test("cuts a long name in the middle, keeps its end, and offers the whole of it", async ({
@@ -164,7 +172,8 @@ test.describe("the playlist", () => {
     const long = page.getByRole("option", { name: /A Very Long Episode Title/ });
     const shown = long.locator('[data-part="fitted"]');
     // The end is where one episode differs from the next: its last ten characters stay.
-    await expect(shown).toHaveText(/^The Crossing S01E03.*… On And On$/);
+    // The show is the heading; the row is the episode's own name.
+    await expect(shown).toHaveText(/^A Very Long.*… On And On$/);
     const name = await box(shown);
     const row = await box(long);
     expect(name.x + name.width).toBeLessThanOrEqual(row.x + row.width - 56 - 8 - 8 + 0.5);
@@ -422,21 +431,21 @@ test.describe("the playlist", () => {
     const row = page.getByRole("option").nth(1);
     await expect(row).toHaveAccessibleName(/The Ferryman.*would not play: Not found/);
     const cells = row.locator(":scope > span[aria-hidden] > *");
-    await expect(cells.nth(2)).toHaveText("Not found");
+    await expect(cells.nth(3)).toHaveText("Not found");
     // In the length's column, ending where the lengths end; the name stepped back.
-    const said = await box(cells.nth(2));
+    const said = await box(cells.nth(3));
     const length = await box(
-      page.getByRole("option").nth(0).locator(":scope > span[aria-hidden] > *").nth(2),
+      page.getByRole("option").nth(0).locator(":scope > span[aria-hidden] > *").nth(3),
     );
     expect(Math.round(said.x + said.width)).toBe(Math.round(length.x + length.width));
-    const name = await box(cells.nth(1));
+    const name = await box(cells.nth(2));
     expect(said.x - (name.x + name.width)).toBeGreaterThanOrEqual(8 - 0.5);
-    expect(await cells.nth(1).evaluate((element) => getComputedStyle(element).color)).not.toBe(
+    expect(await cells.nth(2).evaluate((element) => getComputedStyle(element).color)).not.toBe(
       await page
         .getByRole("option")
         .nth(0)
         .locator(":scope > span[aria-hidden] > *")
-        .nth(1)
+        .nth(2)
         .evaluate((element) => getComputedStyle(element).color),
     );
 
@@ -462,9 +471,9 @@ test.describe("the playlist", () => {
     );
     const row = page.getByRole("option").nth(2);
     const cells = row.locator(":scope > span[aria-hidden] > *");
-    await expect(cells.nth(2)).toContainText("Would not play");
+    await expect(cells.nth(3)).toContainText("Would not play");
     await settle(page);
-    const name = cells.nth(1);
+    const name = cells.nth(2);
     const before = await box(name);
     const shown = await name.locator("[data-shown]").textContent();
     expect(shown).toContain("…");
@@ -472,7 +481,7 @@ test.describe("the playlist", () => {
     await row.hover();
     const remove = row.locator("[data-remove]");
     await expect(remove).toBeVisible();
-    await expect(cells.nth(2).getByText("Would not play")).toBeHidden();
+    await expect(cells.nth(3).getByText("Would not play")).toBeHidden();
     // What gave way kept its room, so the name is cut exactly as it was.
     expect(await box(name)).toEqual(before);
     expect(await name.locator("[data-shown]").textContent()).toBe(shown);
@@ -562,8 +571,8 @@ test.describe("the playlist", () => {
     // It is still the playlist that can be renamed and deleted from here.
     await page.getByRole("button", { name: "Playlist menu" }).click();
     await page.getByRole("menuitem", { name: "Delete “Saturday”" }).click();
-    // Deleted: what is open plays on, as a list without a name, headed as the tab is.
-    await expect(panel.getByRole("heading", { name: "Playlist" })).toBeVisible();
+    // Deleted: what is open plays on, as a list without a name, headed by the show it is.
+    await expect(panel.getByRole("heading", { name: "The Crossing" })).toBeVisible();
     await expect(page.getByRole("option")).toHaveCount(5);
     await page.getByRole("button", { name: "Playlist menu" }).click();
     await expect(page.getByRole("menuitem", { name: /^Delete/ })).toHaveCount(0);
@@ -574,13 +583,13 @@ test.describe("the playlist", () => {
     await expect(panel.getByRole("heading", { name: "Saturday" })).toBeVisible();
   });
 
-  test("is headed by the tab's name until it has one of its own, with the count beneath", async ({
+  test("is headed by the show it is until it has a name of its own, with the count beneath", async ({
     page,
   }) => {
     await openQueue(page);
     await showPlaylist(page);
     const panel = page.getByRole("complementary");
-    const heading = await box(panel.getByRole("heading", { name: "Playlist" }));
+    const heading = await box(panel.getByRole("heading", { name: "The Crossing" }));
     const summary = await box(panel.getByText(/^5 items/));
     expect(summary.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
     // The list below does not move when a name arrives.
@@ -832,5 +841,27 @@ test.describe("the smallest window that can hold the panel", () => {
     // The last control ends at the stage's gutter, not under the panel.
     const last = boxes.at(-1);
     expect(Math.round((last?.x ?? 0) + (last?.width ?? 0) - 9)).toBe(560 - GUTTER);
+  });
+});
+
+test.describe("a torrent's files", () => {
+  test("make the whole torrent the playlist, starting at the one chosen", async ({ page }) => {
+    await openHome(page);
+    // As the torrent view does when a file is chosen: episode 2 of a three-episode season.
+    await page.evaluate(async () => {
+      // The page's own module, from the dev server; not something the test compiles against.
+      const ipc = "/src/ipc/index.ts";
+      const { commands } = (await import(ipc)) as typeof import("../src/ipc");
+      await commands.torrentsPlay(`tb-${"b".repeat(40)}`, 2);
+    });
+    await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
+    const queue = await page.evaluate(() => window.__lumenMock?.queue());
+    // Every episode, in order, with the one chosen playing: those before it are not lost.
+    expect(queue?.items.map((item) => item.title.match(/S01E\d+/)?.[0])).toEqual([
+      "S01E01",
+      "S01E02",
+      "S01E10",
+    ]);
+    expect(queue?.items.findIndex((item) => item.id === queue.current)).toBe(1);
   });
 });

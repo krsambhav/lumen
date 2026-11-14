@@ -1291,7 +1291,23 @@ export function installMockBackend(): LumenMock {
       if (!file) {
         throw { kind: "notFound", message: "that file is not in the torrent" } as AppError;
       }
-      startQueue([`https://torrents.example/dl/${args.id}/${file.index}/${file.name}`]);
+      // As the backend does: the whole torrent is the playlist, starting at the one chosen.
+      const address = (index: number, name: string) =>
+        `https://torrents.example/dl/${args.id}/${index}/${name}`;
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+      const playable = (entry?.files ?? [])
+        .filter((candidate) => candidate.playable)
+        .sort((a, b) => collator.compare(a.name, b.name));
+      const list = playable.some((candidate) => candidate.index === file.index) ? playable : [file];
+      items = makeItems(list.map((candidate) => address(candidate.index, candidate.name)));
+      queueKept = null;
+      queueKey = null;
+      const chosen = items.find(
+        (item) => item.source === address(file.index, file.name),
+      ) as QueueItem;
+      current = chosen.id;
+      announce();
+      load({ source: chosen.source, duration: chosen.duration ?? FILM_LENGTH });
       return null;
     },
     torrentsPlayNext: (args) => {

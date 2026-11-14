@@ -327,9 +327,11 @@ impl Conductor {
     }
 
     /// Replaces the queue with addresses whose names are already known (a
-    /// stream's address says nothing about what it is) and plays the first,
-    /// from where it was left.
-    pub fn open_titled(&self, items: Vec<(String, String)>) -> AppResult<()> {
+    /// stream's address says nothing about what it is) and plays the item
+    /// at `start`, from where it was left; the ones before it stay in the
+    /// playlist, ahead of it.
+    pub fn open_titled_at(&self, items: Vec<(String, String)>, start: usize) -> AppResult<()> {
+        let chosen = items.get(start).map(|(source, _)| source.clone());
         if items.is_empty() {
             return Err(AppError::Invalid("nothing to open".to_owned()));
         }
@@ -337,7 +339,7 @@ impl Conductor {
             .into_iter()
             .map(|(source, title)| Incoming::new(source, title))
             .collect();
-        self.replace(incoming, None, true)
+        self.replace_at(incoming, None, true, None, chosen.as_deref())
     }
 
     /// Puts addresses whose names are already known straight after what is

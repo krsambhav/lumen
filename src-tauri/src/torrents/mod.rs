@@ -273,6 +273,18 @@ pub fn queue_from(files: &[TorrentFile], chosen: u32) -> Vec<&TorrentFile> {
     }
 }
 
+/// The playlist a torrent makes when `chosen` is picked to play: every
+/// playable file in name order (a season whole, so Previous reaches the
+/// episodes before it too), and where in it `chosen` is.
+pub fn playlist_of(files: &[TorrentFile], chosen: u32) -> (Vec<&TorrentFile>, usize) {
+    let mut playable: Vec<&TorrentFile> = files.iter().filter(|file| file.playable).collect();
+    playable.sort_by(|a, b| natural(&a.name, &b.name));
+    match playable.iter().position(|file| file.index == chosen) {
+        Some(at) => (playable, at),
+        None => (files.iter().filter(|file| file.index == chosen).collect(), 0),
+    }
+}
+
 /// The title a file is shown under: its name without the extension.
 pub fn title_of(file: &TorrentFile) -> String {
     let path = Path::new(&file.name);

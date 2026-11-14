@@ -232,8 +232,9 @@ export const commands = {
 	/**  How a torrent being fetched is getting on; once ready, its files. */
 	torrentsStatus: (id: string, options?: InvokeOptions) => typedError<TorrentProgress, AppError>(__TAURI_INVOKE("torrents_status", { id }, options)),
 	/**
-	 *  Plays a file of a fetched torrent in place of the playlist, with the
-	 *  playable files after it.
+	 *  Plays a file of a fetched torrent in place of the playlist. The playlist
+	 *  is the whole torrent (every playable file, in order), starting at the
+	 *  one chosen, so the episodes before it are there as well as those after.
 	 */
 	torrentsPlay: (id: string, index: number, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("torrents_play", { id, index }, options)),
 	/**
