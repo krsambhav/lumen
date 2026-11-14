@@ -44,11 +44,11 @@ export const commands = {
 	windowIsHdr: (options?: InvokeOptions) => __TAURI_INVOKE<boolean>("window_is_hdr", undefined, options),
 	/**
 	 *  Makes room beside the picture for a panel `width` points wide, or with 0
-	 *  takes it away again. The window grows by that much where the screen has
-	 *  room, so the picture stays where it is and the size it was; otherwise the
-	 *  picture is fitted into what is left.
+	 *  takes it away again. The panel lies inside the window and the picture is
+	 *  fitted into what is left, gliding there over `glide_ms` (the panel's own
+	 *  slide) so it shrinks and grows with it.
 	 */
-	windowSetPanelWidth: (width: Real, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("window_set_panel_width", { width }, options)),
+	windowSetPanelWidth: (width: Real, glideMs: number, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("window_set_panel_width", { width, glideMs }, options)),
 	/**
 	 *  Keeps the window above the windows of other apps, or lets it go behind
 	 *  them again.
@@ -1062,7 +1062,7 @@ export type MockCommandHandlers = {
     windowToggleFullscreen: () => null | Promise<null>,
     windowIsFullscreen: () => boolean | Promise<boolean>,
     windowIsHdr: () => boolean | Promise<boolean>,
-    windowSetPanelWidth: (args: { width: Real }) => null | Promise<null>,
+    windowSetPanelWidth: (args: { width: Real; glideMs: number }) => null | Promise<null>,
     windowSetAlwaysOnTop: (args: { onTop: boolean }) => null | Promise<null>,
     windowSetBackdropBlur: (args: { on: boolean }) => null | Promise<null>,
     sessionGet: () => Session | Promise<Session>,

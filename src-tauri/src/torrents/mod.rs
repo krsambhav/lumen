@@ -132,7 +132,12 @@ impl Torrents {
             .into_iter()
             .filter_map(wire::Found::into_result)
             .collect();
-        results.sort_by(|a, b| b.seeders.cmp(&a.seeders));
+        // At least 1080p first (asked for, 2026-11-14), then the best shared.
+        results.sort_by(|a, b| {
+            is_full_hd(&b.name)
+                .cmp(&is_full_hd(&a.name))
+                .then(b.seeders.cmp(&a.seeders))
+        });
         let mut seen = std::collections::HashSet::new();
         results.retain(|result| seen.insert(result.hash.clone()));
         // As many as the server checks at once.
@@ -211,7 +216,15 @@ impl Torrents {
     }
 }
 
-/// The results TorBox already has, marked ready, best shared first.
+/// Whether a release says it is 1080p or better (2160p, 4K, UHD).
+fn is_full_hd(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| matches!(word, "1080p" | "1080i" | "2160p" | "4k" | "uhd"))
+}
+
+/// The results TorBox already has, marked ready, in the order given.
 fn only_ready(
     results: Vec<TorrentResult>,
     ready: &std::collections::HashMap<String, bool>,

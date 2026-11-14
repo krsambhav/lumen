@@ -111,7 +111,11 @@ export function Inspector({ leaving = false, onLeft }: InspectorProps) {
     }
     useInterface.getState().keyboardTaken();
     const showing = panel.current?.querySelector('[role="tabpanel"][data-state="active"]');
-    (showing?.querySelector<HTMLElement>('[role="listbox"]') ?? firstStop(showing))?.focus();
+    (showing?.querySelector<HTMLElement>('[role="listbox"]') ?? firstStop(showing))?.focus({
+      // It is still sliding in from beyond the window's edge: scrolling it
+      // into view would shift the whole page sideways under the picture.
+      preventScroll: true,
+    });
   }, [wantsKeyboard, tab]);
 
   // If nothing animates (reduced to nothing, or not drawn at all), it still goes.

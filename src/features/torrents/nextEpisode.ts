@@ -20,6 +20,12 @@ import { useTorrents } from "./store";
  */
 export type NextStatus = "waiting" | "looking" | "found" | "none" | "done";
 
+/** A search for one episode, made once per film and kept. */
+export type Lookup =
+  | { status: "searching" }
+  | { status: "done"; results: TorrentResult[] }
+  | { status: "failed" };
+
 interface NextEpisodeState {
   /** What is playing, for which all this is. */
   source: string | null;
@@ -32,6 +38,13 @@ interface NextEpisodeState {
   follow: (source: string | null, title: string | null) => void;
   /** Searches quietly for the next episode, then the next season's first. */
   look: () => void;
+  /** The searches for the next episode and the next season's first, by query. */
+  lookups: Readonly<Record<string, Lookup>>;
+  /**
+   * Searches for that episode, once for what is playing; the ready releases
+   * of exactly it are kept under the query.
+   */
+  lookUp: (episode: Episode) => void;
   /** Fetches the episode found and puts it next in the playlist. */
   take: () => void;
   /** Turns the offer down for this episode. */
@@ -55,6 +68,32 @@ export const useNextEpisode = create<NextEpisodeState>((set, get) => ({
   playing: null,
   status: "waiting",
   found: null,
+  lookups: {},
+
+  lookUp: (episode) => {
+    const query = searchFor(episode);
+    const known = get().lookups[query];
+    if (known && known.status !== "failed") {
+      return;
+    }
+    const source = get().source;
+    set({ lookups: { ...get().lookups, [query]: { status: "searching" } } });
+    void commands.torrentsSearch(query).then((settled) => {
+      if (get().source !== source) {
+        return;
+      }
+      const lookup: Lookup =
+        settled.status === "ok"
+          ? {
+              status: "done",
+              results: settled.data.filter(
+                (result) => result.ready !== false && isEpisode(result.name, episode),
+              ),
+            }
+          : { status: "failed" };
+      set({ lookups: { ...get().lookups, [query]: lookup } });
+    });
+  },
 
   follow: (source, title) => {
     const current = get();
@@ -65,7 +104,7 @@ export const useNextEpisode = create<NextEpisodeState>((set, get) => ({
       }
       return;
     }
-    set({ source, playing: episodeOf(title), status: "waiting", found: null });
+    set({ source, playing: episodeOf(title), status: "waiting", found: null, lookups: {} });
   },
 
   look: () => {
@@ -118,4 +157,11 @@ export function nextEpisodeSearch(title: string | null | undefined): string | nu
 export function nextSeasonSearch(title: string | null | undefined): string | null {
   const playing = episodeOf(title);
   return playing === null ? null : searchFor(firstOfNextSeason(playing));
+}
+
+/** A short key that changes whenever a lookup starts or settles: for re-taking a list's first row. */
+export function lookupsKey(state: { lookups: Readonly<Record<string, Lookup>> }): string {
+  return Object.entries(state.lookups)
+    .map(([query, lookup]) => `${query}:${lookup.status}`)
+    .join("|");
 }

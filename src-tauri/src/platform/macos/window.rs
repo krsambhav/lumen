@@ -14,7 +14,7 @@ use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use tauri::WebviewWindow;
 
 use crate::platform::geometry::{
-    fitted_frame, in_title_bar_lead, narrowed_frame,
+    fitted_frame, in_title_bar_lead,
     traffic_light_inset as traffic_light_inset_for, widened_frame, Rect,
 };
 use crate::{MIN_WINDOW_SIZE, TITLEBAR_HEIGHT, TITLEBAR_LEAD};
@@ -334,10 +334,12 @@ fn set_frame(ns_window: &NSWindow, frame: Rect, animate: bool) {
     ns_window.setFrame_display_animate(frame, true, animate);
 }
 
-/// Gives the window `extra` more width for a panel beside the picture, or,
-/// with a negative `extra`, takes that much away again. Not animated: the
-/// picture must not be seen to move, and it does not, because the window
-/// grows away from it. Does nothing to the frame in full screen.
+/// Readies the window for a panel `panel` points wide inside it (0 when it
+/// has gone). The window keeps its frame: the panel takes its strip from
+/// the picture, as in full screen. Only a window too narrow to leave the
+/// picture its minimum beside the panel grows, by the shortfall. While the
+/// panel is there the window is free to take any shape. Does nothing to the
+/// frame in full screen.
 ///
 /// `refit` is the shape of the picture, given when the panel has gone: the
 /// window is then held to that shape again, as it was before the panel came.
@@ -348,7 +350,7 @@ fn set_frame(ns_window: &NSWindow, frame: Rect, animate: bool) {
 /// land in the same frame on screen.
 pub fn change_window_width(
     window: &WebviewWindow,
-    extra: f64,
+    panel: f64,
     refit: Option<(i32, i32)>,
     first: impl FnOnce(f64) + Send + 'static,
 ) {
@@ -361,15 +363,12 @@ pub fn change_window_width(
             .screen()
             .map(|screen| rect_of(screen.visibleFrame()));
         let mut target = current;
-        if !full_screen {
-            if extra > 0.0 {
-                // No shape to hold to while the panel is there.
-                ns_window.setResizeIncrements(NSSize::new(1.0, 1.0));
-                if let Some(visible) = visible {
-                    target = widened_frame(current, visible, extra);
-                }
-            } else if extra < 0.0 {
-                target = narrowed_frame(current, -extra, MIN_WINDOW_SIZE.0);
+        if panel > 0.0 {
+            // No shape to hold to while the panel is there.
+            ns_window.setResizeIncrements(NSSize::new(1.0, 1.0));
+            let short = MIN_WINDOW_SIZE.0 + panel - current.width;
+            if let (false, true, Some(visible)) = (full_screen, short > 0.0, visible) {
+                target = widened_frame(current, visible, short);
             }
         }
         if let Some((width, height)) = refit.filter(|(width, height)| *width > 0 && *height > 0) {

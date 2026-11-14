@@ -5,12 +5,12 @@ import { ContextMenuArea, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { openSources } from "@/features/playlist/actions";
 import { nameOf } from "@/features/shell/failure";
-import { Mark } from "@/features/shell/Mark";
 import { commands, type Recent } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { notifyFailure, send, undoable } from "@/lib/notify";
 import { shortDuration } from "@/lib/timecode";
 import { useRecents } from "./recents";
+import { readTitle } from "./title";
 
 /** A tile is never narrower than this (DESIGN.md §7, "Home, with history"). */
 const TILE_MIN_PX = 168;
@@ -71,6 +71,7 @@ function about(entry: Recent): string {
 
 function Tile({ entry }: { entry: Recent }) {
   const through = progress(entry);
+  const { name, episode } = readTitle(entry.title);
   const local = !entry.source.includes("://");
   return (
     <ContextMenuArea
@@ -140,9 +141,17 @@ function Tile({ entry }: { entry: Recent }) {
               className="absolute inset-0 size-full object-cover"
             />
           ) : (
-            // No picture (sound only), or its frame is not there yet.
-            <span className="absolute inset-0 flex items-center justify-center opacity-70">
-              <Mark divisions={8} />
+            // No picture (sound only, or a stream), or its frame is not there yet:
+            // a title card, set like the stage's own words, rather than an empty box.
+            <span
+              aria-hidden="true"
+              data-title-card=""
+              className="absolute inset-0 flex flex-col justify-end gap-0.5 p-3"
+            >
+              {episode ? (
+                <span className="label tabular truncate text-stage-ink-2">{episode}</span>
+              ) : null}
+              <span className="line-clamp-2 break-words text-heading text-stage-ink">{name}</span>
             </span>
           )}
           {/* A hairline edge, so a dark frame still has a shape on a dark window. */}
@@ -167,12 +176,14 @@ function Tile({ entry }: { entry: Recent }) {
         </span>
         <span className="flex min-w-0 flex-col">
           <MiddleTruncate
-            text={entry.title}
+            text={name}
             full={nameOf(entry.source)}
             className={cn("font-medium", entry.available ? "text-ink-1" : "text-ink-2")}
           />
           {/* Keeps its line even when there is nothing to say, so titles in a row share a baseline. */}
-          <span className="tabular min-h-4 truncate text-caption text-ink-2">{about(entry)}</span>
+          <span className="tabular min-h-4 truncate text-caption text-ink-2">
+            {episode ? `${episode} · ${about(entry)}` : about(entry)}
+          </span>
         </span>
       </button>
     </ContextMenuArea>
@@ -212,15 +223,20 @@ export function RecentlyPlayed({ className }: { className?: string }) {
   }
   return (
     <section aria-labelledby={heading} className={cn("flex flex-col gap-3", className)}>
-      {/* The heading keeps its own height: Clear's box overhangs it, and its word ends at the grid's edge. */}
-      <div className="flex items-center justify-between gap-4">
-        <h3 id={heading} className="label whitespace-nowrap text-ink-3">
+      {/*
+        The heading keeps its own height: Clear's box overhangs it, and its
+        word ends at the grid's edge. A hairline runs between the two, so
+        Clear belongs to its line however wide the window is.
+      */}
+      <div className="flex items-center gap-3">
+        <h3 id={heading} className="label flex-none whitespace-nowrap text-ink-3">
           Recently played
         </h3>
+        <span aria-hidden="true" className="h-px min-w-0 flex-1 bg-line" />
         <Button
           variant="ghost"
           size="sm"
-          className="-my-1.5 -mr-3 flex-none whitespace-nowrap text-ink-2"
+          className="-mx-3 -my-1.5 flex-none whitespace-nowrap px-3 text-ink-2"
           aria-label="Clear recently played"
           onClick={() => runAction("history.clear", "control")}
         >

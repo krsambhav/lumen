@@ -155,3 +155,12 @@ fn only_what_is_ready_is_offered() {
     assert_eq!(kept.len(), 1);
     assert_eq!((kept[0].name.as_str(), kept[0].ready), ("Ra", Some(true)));
 }
+
+#[test]
+fn full_hd_is_known_by_its_name() {
+    assert!(is_full_hd("MobLand S02E10 1080p AMZN WEB-DL"));
+    assert!(is_full_hd("Film.2019.2160p.UHD.BluRay"));
+    assert!(is_full_hd("Film 2019 [4K]"));
+    assert!(!is_full_hd("MobLand S02E10 720p AMZN WEB-DL"));
+    assert!(!is_full_hd("Film 2019 x264-10800p"));
+}

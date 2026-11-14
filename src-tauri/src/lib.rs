@@ -424,7 +424,7 @@ fn fit_window(app: &AppHandle) {
         }
         *fitted = size;
     }
-    let reserved = state.panel.lock().widened;
+    let reserved = state.panel.lock().wanted;
     match size {
         Some((width, height)) => platform::fit_window_to_video(&window, width, height, reserved),
         None => platform::release_window_aspect(&window),
@@ -432,38 +432,27 @@ fn fit_window(app: &AppHandle) {
 }
 
 /// Makes room beside the picture for a panel `width` points wide, or with 0
-/// takes it away again.
-pub(crate) fn set_panel_width(app: &AppHandle, width: f64) {
+/// takes it away again, gliding the picture to its new place over `glide_ms`.
+pub(crate) fn set_panel_width(app: &AppHandle, width: f64, glide_ms: u32) {
     if let Some(state) = app.try_state::<AppState>() {
         state.panel.lock().wanted = width;
     }
-    settle_panel(app);
+    settle_panel(app, glide_ms);
 }
 
-/// Brings the window and the picture into line with the panel that is
-/// wanted: the window as much wider as the panel, where it can be, and the
-/// picture kept out of the panel's strip.
-fn settle_panel(app: &AppHandle) {
+/// Brings the picture into line with the panel that is wanted. The panel
+/// lies inside the window, as in full screen: the window keeps its frame and
+/// the picture is fitted into what is left, gliding there as the panel
+/// slides in. Only a window too narrow to leave the picture its minimum
+/// beside the panel grows, by the shortfall.
+fn settle_panel(app: &AppHandle, glide_ms: u32) {
     let (Some(state), Some(window)) = (
         app.try_state::<AppState>(),
         app.get_webview_window(MAIN_WINDOW),
     ) else {
         return;
     };
-    let full_screen = window.is_fullscreen().unwrap_or(false);
-    let (wanted, extra) = {
-        let mut panel = state.panel.lock();
-        let extra = if full_screen {
-            // A full-screen window cannot be widened; it is settled again
-            // when it comes back.
-            0.0
-        } else {
-            let extra = panel.wanted - panel.widened;
-            panel.widened = panel.wanted;
-            extra
-        };
-        (panel.wanted, extra)
-    };
+    let wanted = state.panel.lock().wanted;
     // With the panel open the picture still needs its own minimum beside it.
     let _ = window.set_min_size(Some(tauri::LogicalSize::new(
         MIN_WINDOW_SIZE.0 + wanted,
@@ -472,14 +461,75 @@ fn settle_panel(app: &AppHandle) {
     // The panel has gone: the window is held to the picture's shape again.
     let refit = (*state.fitted.lock()).filter(|_| wanted == 0.0);
     let handle = app.clone();
-    platform::change_window_width(&window, extra, refit, move |width| {
-        let Some(state) = handle.try_state::<AppState>() else {
-            return;
-        };
-        if let Err(error) = state.player.set_right_margin(reserved_share(wanted, width)) {
-            tracing::warn!(%error, "could not move the picture for the panel");
+    platform::change_window_width(&window, wanted, refit, move |width| {
+        if let Some(state) = handle.try_state::<AppState>() {
+            state.panel.lock().window_width = width;
         }
+        glide_panel(&handle, wanted, glide_ms);
     });
+}
+
+/// How often the picture's margin is moved while it glides.
+const GLIDE_STEP: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// The interface's `--ease-out`, cubic-bezier(0.25, 1, 0.5, 1), is close to
+/// a quartic ease-out; the picture follows the panel on the same curve.
+fn ease_out(t: f64) -> f64 {
+    1.0 - (1.0 - t).powi(4)
+}
+
+/// Moves the strip the picture is kept out of from where it is to `to`
+/// points wide over `glide_ms`, on the interface's curve, so the picture
+/// shrinks and grows with the panel instead of jumping. A later glide, or
+/// none at all (0 ms), takes over at once.
+fn glide_panel(app: &AppHandle, to: f64, glide_ms: u32) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let (generation, from) = {
+        let mut panel = state.panel.lock();
+        panel.glide += 1;
+        (panel.glide, panel.shown)
+    };
+    let total = std::time::Duration::from_millis(u64::from(glide_ms));
+    let handle = app.clone();
+    let step = move |t: f64| -> bool {
+        let Some(state) = handle.try_state::<AppState>() else {
+            return false;
+        };
+        let width = {
+            let mut panel = state.panel.lock();
+            if panel.glide != generation {
+                return false;
+            }
+            panel.shown = from + (to - from) * ease_out(t);
+            reserved_share(panel.shown, panel.window_width)
+        };
+        if let Err(error) = state.player.set_right_margin(width) {
+            tracing::warn!(%error, "could not move the picture for the panel");
+            return false;
+        }
+        true
+    };
+    if total.is_zero() || (to - from).abs() < 0.5 {
+        step(1.0);
+        return;
+    }
+    let spawned = std::thread::Builder::new()
+        .name("panel-glide".to_owned())
+        .spawn(move || {
+            let start = std::time::Instant::now();
+            loop {
+                let t = (start.elapsed().as_secs_f64() / total.as_secs_f64()).min(1.0);
+                if !step(t) || t >= 1.0 {
+                    return;
+                }
+                std::thread::sleep(GLIDE_STEP);
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "could not glide the picture");
+    }
 }
 
 /// The luminance, in nits of the PQ signal, that macOS shows at SDR white.
@@ -590,21 +640,19 @@ fn on_window_event(app: &AppHandle, event: &WindowEvent) {
             if changed {
                 let _ = FullscreenChanged(fullscreen).emit(app);
             }
-            let panel = *state.panel.lock();
-            if changed && !fullscreen && panel.wanted != panel.widened {
-                // The panel was opened or closed in full screen, where the
-                // window could not follow.
-                settle_panel(app);
-            } else if panel.wanted > 0.0 {
-                // The panel keeps its width; its share of the window changes.
-                let width = window
-                    .inner_size()
-                    .ok()
-                    .zip(window.scale_factor().ok())
-                    .map_or(0.0, |(size, scale)| f64::from(size.width) / scale);
-                let _ = state
-                    .player
-                    .set_right_margin(reserved_share(panel.wanted, width));
+            // The panel keeps its width; its share of the window changes.
+            let width = window
+                .inner_size()
+                .ok()
+                .zip(window.scale_factor().ok())
+                .map_or(0.0, |(size, scale)| f64::from(size.width) / scale);
+            let shown = {
+                let mut panel = state.panel.lock();
+                panel.window_width = width;
+                panel.shown
+            };
+            if shown > 0.0 {
+                let _ = state.player.set_right_margin(reserved_share(shown, width));
             }
         }
         _ => {}

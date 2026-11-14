@@ -32,8 +32,8 @@ test.describe("the panel beside the picture", () => {
     expect(panel.y).toBe(0);
     expect(panel.height).toBe(630);
 
-    // The window is asked for exactly that much more room.
-    expect(await calls(page, "windowSetPanelWidth")).toContainEqual({ width: PANEL });
+    // The picture is kept out of exactly that much of the window, gliding there with the panel.
+    expect(await calls(page, "windowSetPanelWidth")).toContainEqual({ width: PANEL, glideMs: 200 });
 
     // The stage ends where the panel begins: its timeline keeps its gutters inside it.
     const timeline = await box(page.getByRole("slider", { name: "Position" }));
@@ -50,16 +50,14 @@ test.describe("the panel beside the picture", () => {
     await openQueue(page);
     await showPlaylist(page);
     await page.getByRole("button", { name: "Hide panel" }).click();
-    // It slides out first; the window gives its room back once it has gone.
+    // The picture takes its room back as the panel starts to slide out.
+    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toMatchObject({ width: 0 });
     await expect(page.getByRole("complementary")).toHaveCount(0);
-    await expect
-      .poll(async () => (await calls(page, "windowSetPanelWidth")).at(-1))
-      .toEqual({ width: 0 });
 
     await showPlaylist(page);
     await page.keyboard.press("Meta+w");
     await expect(page.getByRole("heading", { name: "Drop a file to play" })).toBeVisible();
-    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toEqual({ width: 0 });
+    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toMatchObject({ width: 0 });
   });
 
   test("has a header as tall as the title bar, with its controls on one line", async ({ page }) => {
@@ -720,18 +718,16 @@ test.describe("the panel's colours and its going", () => {
     await page.getByRole("button", { name: "Hide panel" }).click();
     // Still there for a moment, on its way out and out of reach.
     await expect(panel).toHaveCSS("pointer-events", "none");
-    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toEqual({ width: PANEL });
+    // The picture is already gliding back into the room it leaves.
+    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toMatchObject({ width: 0 });
     await expect(panel).toHaveCount(0);
-    await expect
-      .poll(async () => (await calls(page, "windowSetPanelWidth")).at(-1))
-      .toEqual({ width: 0 });
     // Opened again before it has gone, it simply stays.
     await showPlaylist(page);
     await page.keyboard.press("Meta+Shift+p");
     await page.keyboard.press("Meta+Shift+p");
     await expect(page.getByRole("listbox", { name: "Playlist" })).toBeVisible();
     await settle(page);
-    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toEqual({ width: PANEL });
+    expect((await calls(page, "windowSetPanelWidth")).at(-1)).toMatchObject({ width: PANEL });
   });
 
   test("takes the keyboard to its list when a key opened it, and leaves it alone for the pointer", async ({

@@ -44,7 +44,7 @@ test.describe("home", () => {
     [1120, 680],
     [1728, 1080],
   ] as const) {
-    test(`has one left edge, and a scale that spans the window, at ${width} px`, async ({
+    test(`has one left edge, and one column from the scale to the find field, at ${width} px`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height });
@@ -71,12 +71,20 @@ test.describe("home", () => {
       for (const rect of [heading, button, line, ruler]) {
         expect(rect.x).toBe(GUTTER);
       }
-      // The scale runs to the other gutter, less at most one division, and
-      // is a whole number of divisions long so that it ends on a tick.
+      // The scale spans the lead's column (34rem, or less in a narrow
+      // window), less at most one division, and is a whole number of
+      // divisions long so that it ends on a tick. The find field shares the
+      // column's right edge.
+      const column = Math.min(width - 2 * GUTTER, 544);
       const end = ruler.x + ruler.width;
-      expect(end).toBeLessThanOrEqual(width - GUTTER);
-      expect(end).toBeGreaterThan(width - GUTTER - 10);
+      expect(end).toBeLessThanOrEqual(GUTTER + column);
+      expect(end).toBeGreaterThan(GUTTER + column - 10);
       expect((ruler.width - 1) % 10).toBe(0);
+      const field = await box(page.getByRole("search").locator("div").first());
+      expect(Math.round(field.x + field.width)).toBe(GUTTER + column);
+      // The button and the field are one line at one height.
+      expect(field.height).toBe(button.height);
+      expect(Math.abs(field.y - button.y)).toBeLessThan(1);
 
       // A little above the middle, and wholly inside the window.
       const top = ruler.y;
@@ -296,7 +304,7 @@ test.describe("home, once something has been played", () => {
     expect(Math.round(name.x)).toBe(Math.round(picture.x));
   });
 
-  test("says what cannot be found, and gives sound without a picture the mark instead of an empty box", async ({
+  test("says what cannot be found, and gives sound without a picture a title card instead of an empty box", async ({
     page,
   }) => {
     await openHistory(page);
@@ -304,7 +312,8 @@ test.describe("home, once something has been played", () => {
     await expect(gone).toHaveText(/Not found/);
     await expect(gone.locator(".stage")).toHaveCSS("opacity", "0.45");
     const sound = page.getByRole("button", { name: /Night Drive/ });
-    await expect(sound.locator("svg")).toBeVisible();
+    // A title card in place of a picture.
+    await expect(sound.locator("[data-title-card]")).toHaveText("Night Drive");
     await expect(sound.locator("img")).toHaveCount(0);
     // Too short to resume: its length, and no scale.
     await expect(sound).toHaveText(/4 min/);

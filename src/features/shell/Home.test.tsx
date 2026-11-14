@@ -4,10 +4,17 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearActions, registerActions } from "@/actions/registry";
 import { useRecents } from "@/features/library/recents";
+import { usePalette } from "@/features/palette/store";
+import { openSources } from "@/features/playlist/actions";
 import { useSaved } from "@/features/playlist/saved";
 import { mockCommands } from "@/ipc/bindings";
 import { renderUi } from "@/test/render";
 import { Home } from "./Home";
+
+vi.mock("@/features/playlist/actions", async (original) => ({
+  ...(await original<typeof import("@/features/playlist/actions")>()),
+  openSources: vi.fn(),
+}));
 
 function registerOpen(run = vi.fn()) {
   registerActions([
@@ -213,5 +220,28 @@ describe("Home, with a playlist saved", () => {
     // The lead is at the top, and the line that says what Lumen plays has given its place.
     expect(screen.getByRole("main")).toHaveClass("overflow-y-auto");
     expect(screen.queryByText(/plays MKV, MP4, MOV/)).not.toBeInTheDocument();
+  });
+
+  it("plays a link typed into the find field, and searches for anything else", async () => {
+    registerOpen();
+    renderUi(<Home dropping={false} />);
+    const field = screen.getByRole("searchbox", { name: "Search torrents, or play a link" });
+    await userEvent.type(field, "https://vimeo.com/76979871{Enter}");
+    expect(openSources).toHaveBeenCalledExactlyOnceWith(["https://vimeo.com/76979871"]);
+    expect(usePalette.getState().open).toBe(false);
+
+    await userEvent.type(field, "mobland{Enter}");
+    expect(usePalette.getState()).toMatchObject({ open: true, mode: "torrents", seed: "mobland" });
+    expect(openSources).toHaveBeenCalledOnce();
+    usePalette.setState({ open: false, seed: "" });
+  });
+
+  it("names the button by its action alone, with its shortcut as a key shortcut", () => {
+    registerOpen();
+    renderUi(<Home dropping={false} />);
+    const button = screen.getByRole("button", { name: "Open file…" });
+    expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+O");
+    // The keys are drawn inside it, not as a box beside it.
+    expect(button.querySelector("kbd")).not.toBeNull();
   });
 });

@@ -105,14 +105,17 @@ describe("recently played", () => {
     expect(screen.queryByRole("region", { name: "Recently played" })).not.toBeInTheDocument();
   });
 
-  it("shows the frame from the film where there is one, and the mark where there is not", () => {
+  it("shows the frame from the film where there is one, and a title card where there is not", () => {
     show();
     const poster = tile("The Long Take").querySelector("img");
     expect(poster).toHaveAttribute("src", "asset://localhost/poster.jpg");
     // Decoration: the title beside it is what names the tile.
     expect(poster).toHaveAttribute("alt", "");
     expect(tile("Stalker").querySelector("img")).toBeNull();
-    expect(tile("Stalker").querySelector("svg")).not.toBeNull();
+    const card = tile("Stalker").querySelector("[data-title-card]");
+    expect(card).toHaveTextContent("Stalker");
+    // The caption under it names the tile; the card is not read twice.
+    expect(card).toHaveAttribute("aria-hidden", "true");
   });
 
   it("draws how far through it was left only for what will resume", () => {

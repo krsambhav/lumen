@@ -93,18 +93,6 @@ pub fn widened_frame(current: Rect, visible: Rect, extra: f64) -> Rect {
     }
 }
 
-/// The frame of a window whose panel has gone: `extra` narrower, with its
-/// left edge where it was, and never narrower than `min_width`.
-pub fn narrowed_frame(current: Rect, extra: f64, min_width: f64) -> Rect {
-    if extra <= 0.0 {
-        return current;
-    }
-    Rect {
-        width: (current.width - extra).max(min_width).round(),
-        ..current
-    }
-}
-
 /// The share of a window's width that a strip `reserved` wide takes, for
 /// keeping the picture out of it. Never the whole window.
 pub fn reserved_share(reserved: f64, window_width: f64) -> f64 {
@@ -253,13 +241,11 @@ mod tests {
     }
 
     #[test]
-    fn a_panel_is_added_on_the_right_without_moving_the_picture() {
+    fn a_window_grows_on_the_right_without_moving_the_picture() {
         let before = window(960.0, 540.0);
         let after = widened_frame(before, SCREEN, 348.0);
         assert_eq!((after.x, after.y), (before.x, before.y));
         assert_eq!((after.width, after.height), (1308.0, 540.0));
-        // Taking it away again is exact.
-        assert_eq!(narrowed_frame(after, 348.0, MIN.0), before);
     }
 
     #[test]
@@ -286,16 +272,6 @@ mod tests {
         let after = widened_frame(before, SCREEN, 348.0);
         assert_eq!((after.x, after.width), (SCREEN.x, SCREEN.width));
         assert_eq!(after.height, 900.0);
-    }
-
-    #[test]
-    fn narrowing_stops_at_the_smallest_window() {
-        let after = narrowed_frame(window(700.0, 400.0), 348.0, MIN.0);
-        assert_eq!(after.width, MIN.0);
-        assert_eq!(
-            narrowed_frame(window(700.0, 400.0), 0.0, MIN.0).width,
-            700.0
-        );
     }
 
     #[test]

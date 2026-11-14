@@ -74,9 +74,13 @@ export function SavedPlaylists({ className }: { className?: string }) {
   }
   return (
     <section aria-labelledby={heading} className={cn("flex flex-col gap-2", className)}>
-      <h3 id={heading} className="label text-ink-3">
-        Playlists
-      </h3>
+      {/* Ruled like "Recently played" above it, at the same height (Clear's line is 16 px). */}
+      <div className="flex h-4 items-center gap-3">
+        <h3 id={heading} className="label flex-none whitespace-nowrap text-ink-3">
+          Playlists
+        </h3>
+        <span aria-hidden="true" className="h-px min-w-0 flex-1 bg-line" />
+      </div>
       {/* As many columns as fit at 14rem or more each; the rows are 44 px with 4 between. */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,14rem),1fr))] gap-x-6 gap-y-1">
         {entries.slice(0, SHOWN).map((playlist) => (

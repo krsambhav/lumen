@@ -36,6 +36,12 @@
   --ease-leave: cubic-bezier(0.4, 0, 0.2, 1);
   --shift-sm: 4px;
   --shift-lg: 16px;
+  /*
+   * The panel beside the picture pushes in by its whole width, opaque, while
+   * the picture glides aside with it; with reduced motion it fades in place.
+   */
+  --push: 100%;
+  --push-fade: 1;
   --scale-from: 0.98;
 
   --titlebar-h: 44px;
@@ -358,6 +364,8 @@
     --dur-leave: 100ms;
     --shift-sm: 0px;
     --shift-lg: 0px;
+    --push: 0px;
+    --push-fade: 0;
     --scale-from: 1;
   }
 }

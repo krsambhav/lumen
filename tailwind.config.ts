@@ -123,6 +123,10 @@ export default {
         inspector: "var(--inspector-w)",
         palette: "var(--palette-w)",
       },
+      maxWidth: {
+        // The home screen's lead: the scale, the headline and the ways to start (DESIGN.md §7).
+        lead: "34rem",
+      },
       backgroundImage: {
         "scrim-bottom": "var(--scrim-bottom)",
         "scrim-top": "var(--scrim-top)",
@@ -138,13 +142,14 @@ export default {
           from: { opacity: "0", transform: "translateY(calc(var(--shift-sm) * -1))" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        // The panel beside the picture: in and out by its whole width, in step with the picture.
         "slide-in": {
-          from: { opacity: "0", transform: "translateX(var(--shift-lg))" },
+          from: { opacity: "var(--push-fade)", transform: "translateX(var(--push))" },
           to: { opacity: "1", transform: "translateX(0)" },
         },
         "slide-out": {
           from: { opacity: "1", transform: "translateX(0)" },
-          to: { opacity: "0", transform: "translateX(var(--shift-lg))" },
+          to: { opacity: "var(--push-fade)", transform: "translateX(var(--push))" },
         },
         "pop-in": {
           from: { opacity: "0", transform: "scale(var(--scale-from))" },
@@ -165,7 +170,7 @@ export default {
         "rise-in": "rise-in var(--dur-base) var(--ease-out) backwards",
         "drop-in": "drop-in var(--dur-base) var(--ease-out) backwards",
         "slide-in": "slide-in var(--dur-base) var(--ease-out) backwards",
-        "slide-out": "slide-out var(--dur-fast) var(--ease-out) both",
+        "slide-out": "slide-out var(--dur-base) var(--ease-out) both",
         "pop-in": "pop-in var(--dur-base) var(--ease-out) backwards",
         sweep: "sweep 900ms cubic-bezier(0.65, 0, 0.35, 1) infinite alternate",
       },

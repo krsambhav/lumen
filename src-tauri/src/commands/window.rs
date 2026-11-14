@@ -60,18 +60,18 @@ pub fn window_is_hdr(state: tauri::State<'_, crate::state::AppState>) -> bool {
 }
 
 /// Makes room beside the picture for a panel `width` points wide, or with 0
-/// takes it away again. The window grows by that much where the screen has
-/// room, so the picture stays where it is and the size it was; otherwise the
-/// picture is fitted into what is left.
+/// takes it away again. The panel lies inside the window and the picture is
+/// fitted into what is left, gliding there over `glide_ms` (the panel's own
+/// slide) so it shrinks and grows with it.
 #[tauri::command]
 #[specta::specta]
-pub fn window_set_panel_width(app: AppHandle, width: Real) -> AppResult<()> {
+pub fn window_set_panel_width(app: AppHandle, width: Real, glide_ms: u32) -> AppResult<()> {
     if !width.0.is_finite() || width.0 < 0.0 {
         return Err(AppError::Invalid(
             "a panel's width is a number that is not negative".to_owned(),
         ));
     }
-    crate::set_panel_width(&app, width.0);
+    crate::set_panel_width(&app, width.0, glide_ms.min(1000));
     Ok(())
 }
 

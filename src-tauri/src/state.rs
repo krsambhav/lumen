@@ -53,9 +53,13 @@ pub struct AppState {
 pub struct Panel {
     /// The width the interface has asked for; 0 when the panel is closed.
     pub wanted: f64,
-    /// How much of that the window has been widened by. They differ while
-    /// the window is in full screen, where its frame cannot change.
-    pub widened: f64,
+    /// How much of the window the picture is kept out of right now, in
+    /// points. It glides to `wanted` as the panel slides in or out.
+    pub shown: f64,
+    /// The window's width in points, as last laid out.
+    pub window_width: f64,
+    /// Bumped each time a glide starts, so an older one knows to stop.
+    pub glide: u64,
 }
 
 impl AppState {

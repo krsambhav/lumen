@@ -13,6 +13,7 @@ import { readAddress } from "@/features/playlist/address";
 import { useSaved } from "@/features/playlist/saved";
 import { useQueue } from "@/features/playlist/store";
 import { useInterface } from "@/features/shell/interface";
+import { lookupsKey, useNextEpisode } from "@/features/torrents/nextEpisode";
 import { useTorrents } from "@/features/torrents/store";
 import { TorrentFinder, TorrentsInPalette, useFirstRow } from "@/features/torrents/TorrentFinder";
 import { commands } from "@/ipc";
@@ -187,7 +188,8 @@ function Finder() {
   const typed = query.trim();
   // Torrents arrive after the rest: the first row is taken again when they do.
   const torrents = useTorrents((state) => state.search.status);
-  const rows = useFirstRow(`${typed}|${torrents}`);
+  const nextEpisodes = useNextEpisode(lookupsKey);
+  const rows = useFirstRow(`${typed}|${torrents}|${nextEpisodes}`);
   return (
     <Command
       {...rows}
@@ -219,6 +221,8 @@ function Finder() {
         <Command.Empty className="px-3 py-5 text-body text-ink-2">
           {emptyText(mode, typed)}
         </Command.Empty>
+        {/* With nothing typed while an episode plays, the next one leads, then recent searches. */}
+        {mode === "all" && typed === "" ? <TorrentsInPalette query="" /> : null}
         {groups.map((group) => (
           <Command.Group
             key={group.heading}
@@ -257,7 +261,9 @@ function Finder() {
           </Command.Group>
         ))}
         {/* What was typed may be something to watch: torrents follow everything else found. */}
-        {mode === "all" && readAddress(typed) === null ? <TorrentsInPalette query={query} /> : null}
+        {mode === "all" && typed !== "" && readAddress(typed) === null ? (
+          <TorrentsInPalette query={query} />
+        ) : null}
       </Command.List>
     </Command>
   );

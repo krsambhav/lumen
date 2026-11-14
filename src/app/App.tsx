@@ -54,17 +54,31 @@ function fontsReady(): Promise<unknown> {
 }
 
 /**
- * Asks the window for room beside the picture while the panel is open, and
- * gives it back when the panel closes or there is no picture to be beside
- * (DESIGN.md §7, "Panel beside the picture").
+ * How long the picture takes to glide aside for the panel: the panel's own
+ * slide (`--dur-base`), or no glide at all with reduced motion.
+ */
+function glideMs(): number {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    return 0;
+  }
+  const value = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--dur-base"),
+  );
+  return Number.isFinite(value) ? Math.round(value) : 200;
+}
+
+/**
+ * Keeps the picture out of the panel's strip while the panel is open, and
+ * gives it the room back as soon as it starts to close, gliding in step
+ * with the panel (DESIGN.md §7, "Panel beside the picture").
  */
 function usePanelRoom(shown: boolean) {
   useEffect(() => {
     if (!isTauri()) {
       return;
     }
-    // If the window cannot follow, the panel is still there; nothing to say.
-    void commands.windowSetPanelWidth(shown ? INSPECTOR_WIDTH : 0);
+    // If the picture cannot follow, the panel is still there; nothing to say.
+    void commands.windowSetPanelWidth(shown ? INSPECTOR_WIDTH : 0, glideMs());
   }, [shown]);
 }
 
@@ -91,8 +105,8 @@ export function App() {
   const menuOpen = useChrome((state) => state.holds.has("menu"));
   const failure = usePlayer((state) => state.failure);
   const panelWanted = useInterface((state) => state.panelOpen) && open;
-  // The panel stays in the window while it leaves (DESIGN.md §5); the window
-  // gives its room back once it has gone.
+  // The panel stays in the window while it slides out (DESIGN.md §5), and
+  // the picture takes its room back as it goes.
   const [panelLeaving, setPanelLeaving] = useState(false);
   const [panelWas, setPanelWas] = useState(panelWanted);
   if (panelWanted !== panelWas) {
@@ -105,7 +119,7 @@ export function App() {
     setPanelLeaving(false);
   }
   const panel = panelWanted || panelLeaving;
-  usePanelRoom(panel);
+  usePanelRoom(panelWanted);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -168,9 +182,17 @@ export function App() {
   return (
     <TooltipProvider>
       {open ? (
-        <div className="relative h-full">
-          {/* The picture's part of the window: all of it, or all but the panel. */}
-          <div className={cn("absolute inset-y-0 left-0", panel ? "right-inspector" : "right-0")}>
+        // Clipped, so the panel sliding in from beyond the edge is never
+        // something the page could be scrolled to (`clip` from Safari 16;
+        // earlier ones fall back to `hidden`).
+        <div className="relative h-full overflow-hidden [overflow:clip]">
+          {/* The picture's part of the window: all of it, or all but the panel. Its edge follows the panel in and out, on the panel's own curve. */}
+          <div
+            className={cn(
+              "absolute inset-y-0 left-0 transition-[right] duration-base ease-out motion-reduce:transition-none",
+              panelWanted ? "right-inspector" : "right-0",
+            )}
+          >
             <Stage />
           </div>
           {panel ? (
@@ -184,9 +206,9 @@ export function App() {
         </div>
       )}
       <Palette />
-      <DropFrame target={dropping} overVideo={open} panel={panel} />
+      <DropFrame target={dropping} overVideo={open} panel={panelWanted} />
       {/* Nothing lies across the palette or an open menu (DESIGN.md §7, "Toast"). */}
-      <Toaster onStage={open} besidePanel={panel} quiet={paletteOpen || (open && menuOpen)} />
+      <Toaster onStage={open} besidePanel={panelWanted} quiet={paletteOpen || (open && menuOpen)} />
     </TooltipProvider>
   );
 }

@@ -18,8 +18,9 @@ import { usePalette } from "@/features/palette/store";
 import { hasMedia, usePlayer } from "@/features/player/store";
 import type { TorrentFile, TorrentResult } from "@/ipc";
 import { cn } from "@/lib/cn";
+import { episodeOf, firstOfNextSeason, nextInSeason, searchFor } from "./episode";
 import { describeState, formatBytes, formatSeeds, formatSpeed } from "./format";
-import { nextEpisodeSearch, nextSeasonSearch } from "./nextEpisode";
+import { lookupsKey, useNextEpisode } from "./nextEpisode";
 import { type Fetching, type Intent, playableFiles, useTorrents } from "./store";
 
 /** How many recent searches the command palette shows before anything is typed. */
@@ -326,10 +327,15 @@ function ResultGroups({
   results,
   limit,
   onChoose,
+  heading = "Ready to play",
+  after = null,
 }: {
   results: readonly TorrentResult[];
   limit?: number;
   onChoose: (result: TorrentResult, intent: Intent) => void;
+  heading?: string;
+  /** Rows (or a note) at the end of the group; with them the group shows even with no results. */
+  after?: React.ReactNode;
 }) {
   const shown = limit === undefined ? results : results.slice(0, limit);
   const playing = usePlayer(hasMedia);
@@ -356,24 +362,21 @@ function ResultGroups({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [playing, shown, onChoose]);
   // Only results that play at once are found (the server is asked which TorBox has).
-  const groups: [string, readonly TorrentResult[]][] = [["Ready to play", shown]];
+  if (shown.length === 0 && after === null) {
+    return null;
+  }
   return (
-    <>
-      {groups
-        .filter(([, rows]) => rows.length > 0)
-        .map(([heading, rows]) => (
-          <Command.Group key={heading} heading={heading} className={GROUP}>
-            {rows.map((result) => (
-              <ResultItem
-                key={result.hash}
-                result={result}
-                onSelect={() => onChoose(result, "play")}
-                onNext={playing ? () => onChoose(result, "next") : null}
-              />
-            ))}
-          </Command.Group>
-        ))}
-    </>
+    <Command.Group heading={heading} className={GROUP}>
+      {shown.map((result) => (
+        <ResultItem
+          key={result.hash}
+          result={result}
+          onSelect={() => onChoose(result, "play")}
+          onNext={playing ? () => onChoose(result, "next") : null}
+        />
+      ))}
+      {after}
+    </Command.Group>
   );
 }
 
@@ -409,8 +412,9 @@ export function TorrentFinder() {
   const showFetch = view === "fetch" && fetching !== null;
   const searched = search.status !== "idle" && search.query === typed;
   const remembered = useTorrents((state) => state.history.length);
+  const nextEpisodes = useNextEpisode(lookupsKey);
   const rows = useFirstRow(
-    `${view}|${typed}|${search.status}|${fetching?.progress?.phase ?? ""}|${fetching?.id ?? ""}|${remembered}`,
+    `${view}|${typed}|${search.status}|${fetching?.progress?.phase ?? ""}|${fetching?.id ?? ""}|${remembered}|${nextEpisodes}`,
   );
 
   return (
@@ -451,10 +455,15 @@ export function TorrentFinder() {
           />
         ) : typed === "" ? (
           <>
-            <NextEpisodeRow
+            <NextEpisodeGroups
+              limit={5}
               onSearch={(next) => {
                 setQuery(next);
                 find(next);
+              }}
+              onChoose={(result, intent) => {
+                choose(result, intent);
+                setView("fetch");
               }}
             />
             <RecentSearches
@@ -512,29 +521,87 @@ export function TorrentFinder() {
 }
 
 /**
- * While an episode plays: rows that search for the one after it, and for
- * the next season's first, in case this was the season's last.
+ * While an episode plays: the next episode and the next season's first,
+ * each searched for as soon as this is shown (once per episode, then
+ * remembered), with the releases of exactly it that are ready, and a row
+ * that searches wider.
  */
-function NextEpisodeRow({ onSearch }: { onSearch: (query: string) => void }) {
+function NextEpisodeGroups({
+  limit,
+  onSearch,
+  onChoose,
+}: {
+  limit: number;
+  onSearch: (query: string) => void;
+  onChoose: (result: TorrentResult, intent: Intent) => void;
+}) {
   const title = usePlayer((state) => state.title);
-  const next = nextEpisodeSearch(title);
-  const season = nextSeasonSearch(title);
-  if (next === null || season === null) {
-    return null;
-  }
+  const lookups = useNextEpisode((state) => state.lookups);
+  const lookUp = useNextEpisode((state) => state.lookUp);
+  const playing = episodeOf(title);
+  const parts = playing
+    ? ([
+        { name: "Next episode", episode: nextInSeason(playing), next: true },
+        { name: "Next season", episode: firstOfNextSeason(playing), next: false },
+      ] as const)
+    : [];
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the episodes follow from the title
+  useEffect(() => {
+    for (const part of parts) {
+      lookUp(part.episode);
+    }
+  }, [title, lookUp]);
+
   return (
-    <Command.Group heading="Next episode" className={GROUP}>
-      <Command.Item value="torrent:next-episode" onSelect={() => onSearch(next)} className={ROW}>
-        <SkipForward aria-hidden="true" className="size-4 flex-none text-ink-2" />
-        <span className="min-w-0 flex-1 truncate">Find {next}</span>
-        <Shortcut chord="Shift+Cmd+f" className="flex-none text-caption text-ink-3" />
-      </Command.Item>
-      <Command.Item value="torrent:next-season" onSelect={() => onSearch(season)} className={ROW}>
-        <ChevronsRight aria-hidden="true" className="size-4 flex-none text-ink-2" />
-        <span className="min-w-0 flex-1 truncate">Find {season}</span>
-        <span className="flex-none whitespace-nowrap text-caption text-ink-3">Next season</span>
-      </Command.Item>
-    </Command.Group>
+    <>
+      {parts.map((part) => {
+        const query = searchFor(part.episode);
+        const lookup = lookups[query];
+        const results = lookup?.status === "done" ? lookup.results : [];
+        const note =
+          lookup === undefined || lookup.status === "searching" ? (
+            <div className="flex h-9 items-center gap-3 px-3 text-body text-ink-2">
+              <Sweep className="w-4 flex-none" />
+              <span className="min-w-0 flex-1 truncate">Looking for {query}</span>
+            </div>
+          ) : results.length === 0 ? (
+            <p className="px-3 py-1 text-caption text-ink-3">
+              {lookup.status === "failed"
+                ? "The search server could not be reached."
+                : "Nothing is ready to play for it yet."}
+            </p>
+          ) : null;
+        return (
+          <ResultGroups
+            key={part.name}
+            heading={`${part.name} · ${query}`}
+            results={results}
+            limit={limit}
+            onChoose={onChoose}
+            after={
+              <>
+                {note}
+                <Command.Item
+                  value={`torrent:find:${query}`}
+                  onSelect={() => onSearch(query)}
+                  className={ROW}
+                >
+                  {part.next ? (
+                    <SkipForward aria-hidden="true" className="size-4 flex-none text-ink-2" />
+                  ) : (
+                    <ChevronsRight aria-hidden="true" className="size-4 flex-none text-ink-2" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">Find {query}</span>
+                  {part.next ? (
+                    <Shortcut chord="Shift+Cmd+f" className="flex-none text-caption text-ink-3" />
+                  ) : null}
+                </Command.Item>
+              </>
+            }
+          />
+        );
+      })}
+    </>
   );
 }
 
@@ -590,7 +657,14 @@ export function TorrentsInPalette({ query }: { query: string }) {
   if (typed === "") {
     return (
       <>
-        <NextEpisodeRow onSearch={search} />
+        <NextEpisodeGroups
+          limit={3}
+          onSearch={search}
+          onChoose={(result, intent) => {
+            useTorrents.getState().choose(result, intent);
+            usePalette.getState().show("torrents");
+          }}
+        />
         <RecentSearches limit={RECENT_IN_PALETTE} onSearch={search} />
       </>
     );
