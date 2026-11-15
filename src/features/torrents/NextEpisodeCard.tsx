@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -20,7 +20,8 @@ const CHECK_EVERY_MS = 1000;
  * Nothing is ever added without being asked. The look happens 30 s before
  * the end credits when a chapter says where they start, else a minute
  * before the end, and not at all when something already follows in the
- * playlist.
+ * playlist. The offer is shown only while the film is past that moment:
+ * seeking back hides it, and it comes back as the end nears again.
  */
 export function NextEpisodeCard() {
   const source = usePlayer((state) => state.source);
@@ -34,31 +35,31 @@ export function NextEpisodeCard() {
 
   useEffect(() => follow(source, title), [source, title, follow]);
 
+  // Whether the film is past the moment to look, so the offer belongs on screen.
+  const [near, setNear] = useState(false);
+
   useEffect(() => {
-    if (!playing) {
-      return;
-    }
     const check = () => {
+      const player = usePlayer.getState();
+      const at = lookAt(player.chapters, player.duration);
+      const past = at !== null && currentPosition(player) >= at;
+      setNear(past);
       const next = useNextEpisode.getState();
-      if (next.status !== "waiting" || next.playing === null) {
+      if (!past || !playing || next.status !== "waiting" || next.playing === null) {
         return;
       }
       // Something already follows: the playlist knows what is next.
       if (useQueue.getState().hasNext) {
         return;
       }
-      const player = usePlayer.getState();
-      const at = lookAt(player.chapters, player.duration);
-      if (at !== null && currentPosition(player) >= at) {
-        next.look();
-      }
+      next.look();
     };
     check();
     const timer = setInterval(check, CHECK_EVERY_MS);
     return () => clearInterval(timer);
   }, [playing]);
 
-  if (status !== "found" || found === null) {
+  if (status !== "found" || found === null || !near) {
     return null;
   }
   const { episode, result } = found;
