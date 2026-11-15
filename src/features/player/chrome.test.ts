@@ -146,7 +146,7 @@ describe("a pointer resting on the chrome", () => {
     const stop = connectChromePointer();
     document.body.innerHTML = `
       <div data-stage-chrome="">
-        <div id="bar"><button id="play">Play</button><div role="slider" id="seek"></div></div>
+        <div id="bar"><div data-chrome-aim="" id="band"><div role="slider" id="seek"></div></div><button id="play">Play</button></div>
       </div>
       <button id="elsewhere">Open</button>`;
     const over = (id: string) =>
@@ -159,6 +159,10 @@ describe("a pointer resting on the chrome", () => {
     vi.advanceTimersByTime(60_000);
     expect(useChrome.getState().visible).toBe(true);
     over("seek");
+    vi.advanceTimersByTime(60_000);
+    expect(useChrome.getState().visible).toBe(true);
+    // Beside the seek bar, on its band: still there.
+    over("band");
     vi.advanceTimersByTime(60_000);
     expect(useChrome.getState().visible).toBe(true);
     // Off the controls, on the bar itself: 0.4 s.

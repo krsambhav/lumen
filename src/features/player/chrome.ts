@@ -148,14 +148,17 @@ export function useChromeHold(reason: string, active: boolean): void {
 }
 
 /** What counts as a control the pointer can be aimed at: while it is on one, the chrome stays. */
-const CONTROL = "button, [role='slider'], [role='button'], input, select, a[href]";
+const CONTROL =
+  "button, [role='slider'], [role='button'], input, select, a[href], [data-chrome-aim]";
 
 /**
  * Follows the pointer for the chrome, over the whole document:
  *
- * - On a control of the stage's chrome (a button, the seek bar), it holds
- *   the chrome for as long as it is there, playing or not: the user asked
- *   on 2026-11-15 that it never vanish from under a pointer on a button.
+ * - On a control of the stage's chrome (a button, the seek bar and the
+ *   band around it, marked `data-chrome-aim`), it holds the chrome for as
+ *   long as it is there, playing or not: the user asked on 2026-11-15 that
+ *   it never vanish from under a pointer on a button, and on 2026-11-16
+ *   anywhere over the seek bar's section.
  * - Out of the window, it rests on nothing, and the chrome goes as it does
  *   when the pointer stops. The element under it hears no `pointerleave` of
  *   its own when it goes straight out over the window's edge in every

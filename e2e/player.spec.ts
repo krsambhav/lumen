@@ -462,6 +462,34 @@ test.describe("chrome", () => {
     await expect(bar).toHaveCSS("opacity", "0", { timeout: 2000 });
   });
 
+  test("anywhere on the seek bar's band keeps it while the film plays", async ({ page }) => {
+    await openFilm(page);
+    const bar = controlBar(page);
+    await playButton(page).click();
+    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+    const seek = await page.getByRole("slider", { name: "Position" }).boundingBox();
+    if (!seek) {
+      throw new Error("no seek bar");
+    }
+    // Just above the slider's own box, then out at the window's left edge,
+    // level with the track: both are the seek bar's section.
+    const spots: [number, number][] = [
+      [seek.x + seek.width / 2, seek.y - 3],
+      [4, seek.y + seek.height / 2],
+    ];
+    for (const [x, y] of spots) {
+      await page.mouse.move(x, y, { steps: 3 });
+      expect(
+        await page.evaluate(
+          () =>
+            document.querySelector(":hover:not(:has(:hover))")?.closest("[role='slider']") ?? null,
+        ),
+      ).toBeNull();
+      await page.waitForTimeout(1500);
+      await expect(bar).toHaveCSS("opacity", "1");
+    }
+  });
+
   test("goes 0.2 s after the pointer leaves the window, even from a button", async ({ page }) => {
     await openFilm(page);
     const bar = controlBar(page);
