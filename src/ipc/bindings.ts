@@ -213,7 +213,12 @@ export const commands = {
 	 *  `history_forget`.
 	 */
 	historyRestore: (entry: HistoryEntry, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("history_restore", { entry }, options)),
-	/**  Forgets everything that was played. */
+	/**
+	 *  Pins something to Recently played, or unpins it. A pinned entry is
+	 *  listed first and outlasts "Clear". Returns whether it was there.
+	 */
+	historyPin: (source: string, pinned: boolean, options?: InvokeOptions) => typedError<boolean, AppError>(__TAURI_INVOKE("history_pin", { source, pinned }, options)),
+	/**  Forgets everything that was played and is not pinned. */
 	historyClear: (options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("history_clear", undefined, options)),
 	/**
 	 *  Shows a file or folder in the Finder: a file is selected in its folder, a
@@ -533,6 +538,12 @@ export type GeneralSettings = {
 	 *  and then while it is open. Nothing is fetched until it is asked for.
 	 */
 	checkForUpdates: boolean,
+	/**
+	 *  Nothing played is remembered: not in Recently played, not where it
+	 *  was left, not what was chosen for it; and no search is kept. What
+	 *  was remembered before is still read, so a film still resumes.
+	 */
+	incognito: boolean,
 };
 
 /**
@@ -563,6 +574,11 @@ export type HistoryEntry = {
 	state: FileState | null,
 	/**  The playlist it was last played in, if it was not played alone. */
 	playlist: PlayedIn | null,
+	/**
+	 *  Pinned to Recently played: listed first, and kept when the rest is
+	 *  cleared. For a playlist, true if any of its items is pinned.
+	 */
+	pinned?: boolean,
 };
 
 export type InspectorTab = "playlist" | "chapters" | "video" | "audio" | "subtitles";
@@ -1197,6 +1213,7 @@ export type MockCommandHandlers = {
     historyRecent: (args: { limit: number }) => Recent[] | Promise<Recent[]>,
     historyForget: (args: { source: string }) => boolean | Promise<boolean>,
     historyRestore: (args: { entry: HistoryEntry }) => null | Promise<null>,
+    historyPin: (args: { source: string; pinned: boolean }) => boolean | Promise<boolean>,
     historyClear: () => null | Promise<null>,
     filesShowInFinder: (args: { path: string }) => null | Promise<null>,
     torrentsSearch: (args: { query: string }) => TorrentResult[] | Promise<TorrentResult[]>,
@@ -1302,6 +1319,7 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "history_recent": return mockCommandHandler(mockHandlers.historyRecent, "history_recent", args);
             case "history_forget": return mockCommandHandler(mockHandlers.historyForget, "history_forget", args);
             case "history_restore": return mockCommandHandler(mockHandlers.historyRestore, "history_restore", args);
+            case "history_pin": return mockCommandHandler(mockHandlers.historyPin, "history_pin", args);
             case "history_clear": return mockCommandHandler(mockHandlers.historyClear, "history_clear", args);
             case "files_show_in_finder": return mockCommandHandler(mockHandlers.filesShowInFinder, "files_show_in_finder", args);
             case "torrents_search": return mockCommandHandler(mockHandlers.torrentsSearch, "torrents_search", args);

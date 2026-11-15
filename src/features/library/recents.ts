@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { commands, events, type Recent, type Subscription, subscription } from "@/ipc";
-import { send } from "@/lib/notify";
+import { notifyFailure, send } from "@/lib/notify";
 
 /**
  * Opens something from what was played: one played in a playlist brings
@@ -10,6 +10,23 @@ import { send } from "@/lib/notify";
  */
 export function playRecent(source: string, resume = true, play: string | null = null): void {
   send("open that", commands.playlistOpenRecent(source, play, resume));
+}
+
+/**
+ * Pins something to Recently played, or unpins it: a pinned tile comes
+ * first and outlasts "Clear". Shown at once; the backend's order follows
+ * when it says the history has changed.
+ */
+export function pinRecent(source: string, pinned: boolean): void {
+  useRecents.setState((state) => ({
+    entries: state.entries.map((entry) => (entry.source === source ? { ...entry, pinned } : entry)),
+  }));
+  void commands.historyPin(source, pinned).then((result) => {
+    if (result.status === "error") {
+      notifyFailure(pinned ? "pin that" : "unpin that", result.error);
+      void useRecents.getState().load();
+    }
+  });
 }
 
 /** As many as two rows of tiles can show on the widest window worth planning for. */

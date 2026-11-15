@@ -74,15 +74,20 @@ test.describe("home", () => {
       }
       // The scale spans the lead's column (34rem, or less in a narrow
       // window), less at most one division, and is a whole number of
-      // divisions long so that it ends on a tick. The find field shares the
-      // column's right edge.
+      // divisions long so that it ends on a tick. The row of ways to start
+      // shares the column's right edge: the find field, then the incognito
+      // switch at the end of it, 12 px after the field.
       const column = Math.min(width - 2 * GUTTER, 544);
       const end = ruler.x + ruler.width;
       expect(end).toBeLessThanOrEqual(GUTTER + column);
       expect(end).toBeGreaterThan(GUTTER + column - 10);
       expect((ruler.width - 1) % 10).toBe(0);
       const field = await box(page.getByRole("search").locator("div").first());
-      expect(Math.round(field.x + field.width)).toBe(GUTTER + column);
+      const incognito = await box(page.getByRole("button", { name: "Incognito" }));
+      expect(Math.round(incognito.x + incognito.width)).toBe(GUTTER + column);
+      expect(Math.round(incognito.x - (field.x + field.width))).toBe(12);
+      expect(incognito.height).toBe(field.height);
+      expect(Math.abs(incognito.y - field.y)).toBeLessThan(1);
       // The button and the field are one line at one height.
       expect(field.height).toBe(button.height);
       expect(Math.abs(field.y - button.y)).toBeLessThan(1);
@@ -228,11 +233,10 @@ test.describe("home, once something has been played", () => {
     await openHistory(page);
     const headline = await box(page.getByRole("heading", { name: "Drop a file to play" }));
     const label = await box(page.getByRole("heading", { name: "Recently played" }));
-    // Every button in the section is a tile, but for Clear beside its heading.
+    // The tiles themselves, not the pin and remove controls on them.
     const tiles = page
       .getByRole("region", { name: "Recently played" })
-      .getByRole("button")
-      .filter({ hasNotText: /^Clear$/ });
+      .locator("[data-tile] > button");
     const first = await box(tiles.first());
     expect(headline.x).toBe(GUTTER);
     expect(label.x).toBe(GUTTER);
@@ -255,12 +259,7 @@ test.describe("home, once something has been played", () => {
       const region = page.getByRole("region", { name: "Recently played" });
       await expect(region).toBeVisible();
       const tiles = await Promise.all(
-        (
-          await region
-            .getByRole("button")
-            .filter({ hasNotText: /^Clear$/ })
-            .all()
-        ).map((tile) => box(tile)),
+        (await region.locator("[data-tile] > button").all()).map((tile) => box(tile)),
       );
 
       // As many as fit at 168 px or more, six at most: a wider window gets larger tiles.
@@ -342,11 +341,10 @@ test.describe("home, once something has been played", () => {
     page,
   }) => {
     await openHistory(page);
-    // Every button in the section is a tile, but for Clear beside its heading.
+    // The tiles themselves, not the pin and remove controls on them.
     const tiles = page
       .getByRole("region", { name: "Recently played" })
-      .getByRole("button")
-      .filter({ hasNotText: /^Clear$/ });
+      .locator("[data-tile] > button");
     const count = await tiles.count();
     await tabTo(page, tiles.first());
     const second = await tiles.nth(1).getAttribute("aria-label");
@@ -472,6 +470,57 @@ test.describe("home, once something has been played", () => {
     await toast.getByRole("button", { name: "Start over" }).click();
     expect((await calls(page, "playerSeekTo")).at(-1)).toEqual({ seconds: 0, exact: true });
     await expect(toast).toHaveCount(0);
+  });
+
+  test("pins a tile first, so Clear leaves it, and removes another with its ×", async ({
+    page,
+  }) => {
+    await page.goto("/#mock-history-4");
+    const region = page.getByRole("region", { name: "Recently played" });
+    const tiles = region.locator("[data-tile] > button");
+    await expect(tiles).toHaveCount(4);
+    const third = region.locator("[data-tile]").nth(2);
+    const name = (await third.locator(":scope > button .sr-only").textContent()) ?? "";
+    // The controls appear with the pointer on the tile.
+    const pin = third.getByRole("button", { name: "Pin to recently played" });
+    await expect(pin).toHaveCSS("opacity", "0");
+    await third.hover();
+    await expect(pin).toHaveCSS("opacity", "1");
+    await pin.click();
+    // Pinned, it comes first.
+    await expect(tiles.first()).toContainText(name);
+    await expect(region.locator("[data-tile]").first()).toHaveAttribute("data-pinned", "true");
+
+    const last = region.locator("[data-tile]").last();
+    await last.hover();
+    await last.getByRole("button", { name: "Remove from recently played" }).click();
+    await expect(tiles).toHaveCount(3);
+
+    await region.getByRole("button", { name: "Clear recently played" }).click();
+    await expect(tiles).toHaveCount(1);
+    await expect(tiles.first()).toContainText(name);
+    await expect(region.getByRole("button", { name: "Clear recently played" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  test("remembers nothing played while incognito, and says so", async ({ page }) => {
+    await page.goto("/#mock-history-2");
+    const tiles = page.locator("[data-tile] > button");
+    await expect(tiles).toHaveCount(2);
+    const incognito = page.getByRole("button", { name: "Incognito" });
+    await incognito.click();
+    await expect(incognito).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText(/Incognito: nothing you play/)).toBeVisible();
+    await page.evaluate(() =>
+      window.__lumenMock?.open({ source: "/Users/me/Films/Private.mkv", duration: 7305 }),
+    );
+    await expect(page.getByRole("slider", { name: "Position" })).toBeVisible();
+    await page.keyboard.press("Meta+w");
+    await expect(page.getByRole("heading", { name: "Drop a file to play" })).toBeVisible();
+    await expect(tiles).toHaveCount(2);
+    await expect(page.locator("[data-tile]").filter({ hasText: "Private" })).toHaveCount(0);
   });
 
   test("starts over from a tile's menu, and removes it with Undo", async ({ page }) => {

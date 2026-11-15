@@ -34,12 +34,17 @@ pub struct GeneralSettings {
     /// Look for a newer version of Lumen by itself, when it opens and now
     /// and then while it is open. Nothing is fetched until it is asked for.
     pub check_for_updates: bool,
+    /// Nothing played is remembered: not in Recently played, not where it
+    /// was left, not what was chosen for it; and no search is kept. What
+    /// was remembered before is still read, so a film still resumes.
+    pub incognito: bool,
 }
 
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             check_for_updates: true,
+            incognito: false,
         }
     }
 }

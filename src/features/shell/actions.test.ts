@@ -6,6 +6,7 @@ import { DEFAULT_SESSION } from "@/app/boot";
 import { useRecents } from "@/features/library/recents";
 import { usePalette } from "@/features/palette/store";
 import { IDLE_SNAPSHOT, usePlayer } from "@/features/player/store";
+import { useSettings } from "@/features/settings/store";
 import type { Recent } from "@/ipc";
 import { mockCommands } from "@/ipc/bindings";
 import { undoable } from "@/lib/notify";
@@ -175,6 +176,17 @@ describe("clearing what was played", () => {
     });
   });
 
+  it("leaves what is pinned, and cannot be done when only that is left", async () => {
+    const kept: Recent = { ...PLAYED, source: "/films/kept.mkv", pinned: true };
+    useRecents.setState({ entries: [kept, PLAYED] });
+    mockCommands({ historyClear: () => null, historyRecent: () => [kept] });
+    void action("history.clear").run(KEYS);
+    expect(useRecents.getState().entries).toEqual([kept]);
+    expect(action("history.clear").unavailable?.()).toBe("Everything left is pinned");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    clearUndo();
+  });
+
   it("shows it all again, and says so, when it could not be cleared", async () => {
     mockCommands({
       historyClear: () => {
@@ -190,5 +202,22 @@ describe("clearing what was played", () => {
     // A complaint, with nothing to undo.
     expect(toast.getToasts()).toHaveLength(1);
     expect(action("edit.undo").unavailable?.()).toBe("There is nothing to undo");
+  });
+});
+
+describe("incognito", () => {
+  it("is a switch kept in the settings, confirmed over a film", async () => {
+    const saved = vi.fn((_: { settings: unknown }) => null);
+    mockCommands({ settingsSet: saved });
+    const incognito = action("history.incognito");
+    expect(incognito.checked?.()).toBe(false);
+    expect(incognito.shortcuts).toEqual(["Shift+Cmd+n"]);
+    void incognito.run(KEYS);
+    expect(incognito.checked?.()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(useSettings.getState().settings.general.incognito).toBe(true);
+    void incognito.run(KEYS);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(incognito.checked?.()).toBe(false);
   });
 });

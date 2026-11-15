@@ -1,15 +1,17 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { Pin, PinOff, X } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { runAction } from "@/actions/registry";
 import { Button } from "@/components/ui/button";
 import { ContextMenuArea, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
+import { Tooltip } from "@/components/ui/tooltip";
 import { nameOf } from "@/features/shell/failure";
 import { commands, type Recent } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { notifyFailure, send, undoable } from "@/lib/notify";
 import { shortDuration } from "@/lib/timecode";
 import { PlaylistPeek } from "./PlaylistPeek";
-import { playRecent, useRecents } from "./recents";
+import { pinRecent, playRecent, useRecents } from "./recents";
 import { readTitle } from "./title";
 
 /** A tile is never narrower than this (DESIGN.md §7, "Home, with history"). */
@@ -76,7 +78,46 @@ function about(entry: Recent): string {
     : `${shortDuration(entry.duration - entry.position)} left`;
 }
 
+/**
+ * A small stage control on a tile's thumbnail, beside the playlist chip's
+ * kind: `stage-veil` behind `stage-ink`, 24 px square.
+ */
+function ThumbButton({
+  label,
+  onClick,
+  pressed,
+  className,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  pressed?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+        className={cn(
+          "group/pin stage grid size-6 flex-none place-items-center rounded-sm bg-stage-veil text-stage-ink",
+          "transition-[background-color,opacity] duration-fast ease-out hover:bg-stage-press",
+          "outline-none focus-visible:ring-2 focus-visible:ring-accent",
+          "[&_svg]:pointer-events-none [&_svg]:size-3.5",
+          className,
+        )}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
 function Tile({ entry }: { entry: Recent }) {
+  const pinned = entry.pinned === true;
   const through = progress(entry);
   const { name, episode } = readTitle(entry.title);
   const place = placeInPlaylist(entry);
@@ -85,7 +126,7 @@ function Tile({ entry }: { entry: Recent }) {
   return (
     // The cell holds the tile and, for a playlist, the chip that lists it:
     // a control of its own, since a button cannot hold another.
-    <div data-tile="" className="relative min-w-0">
+    <div data-tile="" data-pinned={pinned || undefined} className="group/cell relative min-w-0">
       <ContextMenuArea
         menu={
           entry.available ? (
@@ -109,11 +150,19 @@ function Tile({ entry }: { entry: Recent }) {
                 </MenuItem>
               ) : null}
               <MenuSeparator />
+              <MenuItem onSelect={() => pinRecent(entry.source, !pinned)}>
+                {pinned ? "Unpin" : "Pin to recently played"}
+              </MenuItem>
               <MenuItem onSelect={() => forgetRecent(entry)}>Remove from recently played</MenuItem>
             </>
           ) : (
-            // The file has gone: there is nothing to play or to show, only this.
-            <MenuItem onSelect={() => forgetRecent(entry)}>Remove from recently played</MenuItem>
+            // The file has gone: there is nothing to play or to show, only these.
+            <>
+              {pinned ? (
+                <MenuItem onSelect={() => pinRecent(entry.source, false)}>Unpin</MenuItem>
+              ) : null}
+              <MenuItem onSelect={() => forgetRecent(entry)}>Remove from recently played</MenuItem>
+            </>
           )
         }
       >
@@ -201,6 +250,40 @@ function Tile({ entry }: { entry: Recent }) {
           </span>
         </button>
       </ContextMenuArea>
+      {/*
+        Pin and remove, at the thumbnail's top left (the playlist chip has its
+        right): shown while the pointer is on the tile or the keyboard is in
+        it. A pinned tile keeps its pin in sight, so it reads as pinned.
+      */}
+      <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1">
+        <ThumbButton
+          label={pinned ? "Unpin" : "Pin to recently played"}
+          pressed={pinned}
+          onClick={() => pinRecent(entry.source, !pinned)}
+          className={cn(
+            "pointer-events-auto",
+            !pinned &&
+              "opacity-0 focus-visible:opacity-100 group-hover/cell:opacity-100 group-focus-within/cell:opacity-100",
+          )}
+        >
+          {pinned ? (
+            <>
+              {/* Filled while pinned; under the pointer it shows what a press would do. */}
+              <Pin aria-hidden="true" className="fill-current group-hover/pin:hidden" />
+              <PinOff aria-hidden="true" className="hidden group-hover/pin:block" />
+            </>
+          ) : (
+            <Pin aria-hidden="true" />
+          )}
+        </ThumbButton>
+        <ThumbButton
+          label="Remove from recently played"
+          onClick={() => forgetRecent(entry)}
+          className="pointer-events-auto opacity-0 focus-visible:opacity-100 group-hover/cell:opacity-100 group-focus-within/cell:opacity-100"
+        >
+          <X aria-hidden="true" />
+        </ThumbButton>
+      </div>
       {entry.available ? (
         <PlaylistPeek
           entry={entry}
@@ -219,6 +302,11 @@ function Tile({ entry }: { entry: Recent }) {
  */
 export function RecentlyPlayed({ className }: { className?: string }) {
   const entries = useRecents((state) => state.entries);
+  // Clear leaves what is pinned; with nothing else there, it would do nothing.
+  const clearBlocked =
+    entries.length > 0 && entries.every((entry) => entry.pinned)
+      ? "Everything left is pinned"
+      : undefined;
   const heading = useId();
   const grid = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(UNMEASURED_COLUMNS);
@@ -256,15 +344,25 @@ export function RecentlyPlayed({ className }: { className?: string }) {
           Recently played
         </h3>
         <span aria-hidden="true" className="h-px min-w-0 flex-1 bg-line" />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-mx-3 -my-1.5 flex-none whitespace-nowrap px-3 text-ink-2"
-          aria-label="Clear recently played"
-          onClick={() => runAction("history.clear", "control")}
-        >
-          Clear
-        </Button>
+        <Tooltip label="Clear recently played" detail={clearBlocked} disabled={!clearBlocked}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "-mx-3 -my-1.5 flex-none whitespace-nowrap px-3 text-ink-2",
+              clearBlocked && "cursor-default opacity-45 hover:bg-transparent hover:text-ink-2",
+            )}
+            aria-label="Clear recently played"
+            aria-disabled={clearBlocked ? true : undefined}
+            onClick={() => {
+              if (!clearBlocked) {
+                runAction("history.clear", "control");
+              }
+            }}
+          >
+            Clear
+          </Button>
+        </Tooltip>
       </div>
       <div
         ref={grid}

@@ -12,7 +12,7 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -187,9 +187,7 @@ impl State {
         }
         let key = self
             .playlist_key
-            .get_or_insert_with(|| {
-                format!("{now}-{}", OPENINGS.fetch_add(1, Ordering::Relaxed))
-            })
+            .get_or_insert_with(|| format!("{now}-{}", OPENINGS.fetch_add(1, Ordering::Relaxed)))
             .clone();
         Some(history::PlayedIn {
             key,
@@ -225,6 +223,8 @@ pub struct Conductor {
     state: Mutex<State>,
     /// Bumped whenever a new search for lengths starts, so an older one stops.
     probing: AtomicU64,
+    /// Nothing is written to the history while this is set.
+    incognito: AtomicBool,
     me: Weak<Conductor>,
 }
 
@@ -257,8 +257,20 @@ impl Conductor {
                 playlist_key: None,
             }),
             probing: AtomicU64::new(0),
+            incognito: AtomicBool::new(false),
             me: me.clone(),
         })
+    }
+
+    /// Stops writing anything to the history, or starts again. What is
+    /// opened meanwhile is not written later either: progress is written
+    /// only for what the history already has.
+    pub fn set_incognito(&self, incognito: bool) {
+        self.incognito.store(incognito, Ordering::Relaxed);
+    }
+
+    fn incognito(&self) -> bool {
+        self.incognito.load(Ordering::Relaxed)
     }
 
     pub fn snapshot(&self) -> QueueSnapshot {
@@ -886,6 +898,9 @@ impl Conductor {
         played_in: Option<&history::PlayedIn>,
         notices: &mut Vec<Notice>,
     ) {
+        if self.incognito() {
+            return;
+        }
         match history::opened(
             &self.db,
             &watch.source,
@@ -920,6 +935,11 @@ impl Conductor {
             return;
         };
         let chosen = chosen.filter(|chosen| watch.kept.as_ref() != Some(chosen));
+        if self.incognito() {
+            // Not written, and not written later: it was never there.
+            watch.dirty = false;
+            return;
+        }
         if !watch.dirty && chosen.is_none() {
             return;
         }

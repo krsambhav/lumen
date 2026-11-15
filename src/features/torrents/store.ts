@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import { create } from "zustand";
 import { usePalette } from "@/features/palette/store";
+import { useSettings } from "@/features/settings/store";
 import {
   type AppError,
   commands,
@@ -61,7 +62,7 @@ interface TorrentsState {
   fetching: Fetching | null;
   /** What was searched for lately, newest first, without repeats. */
   history: string[];
-  /** Sends a search for `query` (asked for with Return) and remembers it. */
+  /** Sends a search for `query` (asked for with Return) and remembers it, unless incognito. */
   find: (query: string) => void;
   /** Forgets every search. */
   clearHistory: () => void;
@@ -248,12 +249,15 @@ export const useTorrents = create<TorrentsState>((set, get) => {
         set({ search: { status: "idle" } });
         return;
       }
-      const history = [
-        typed,
-        ...get().history.filter((entry) => entry.toLowerCase() !== typed.toLowerCase()),
-      ].slice(0, HISTORY_KEPT);
-      set({ history });
-      saveHistory(history);
+      // Incognito, a search is made but not remembered.
+      if (!useSettings.getState().settings.general.incognito) {
+        const history = [
+          typed,
+          ...get().history.filter((entry) => entry.toLowerCase() !== typed.toLowerCase()),
+        ].slice(0, HISTORY_KEPT);
+        set({ history });
+        saveHistory(history);
+      }
       // The same search asked for again (⌘K, then ⌘F on it) is the one under
       // way or done: it must not count as newer, or its answer is dropped.
       const current = get().search;

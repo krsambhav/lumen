@@ -765,6 +765,7 @@ pub(crate) fn apply_settings(app: &AppHandle, settings: &Settings, before: Optio
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
+    state.conductor.set_incognito(settings.general.incognito);
     let player = &state.player;
     let changed = |same: fn(&Settings, &Settings) -> bool| {
         before.is_none_or(|before| !same(before, settings))

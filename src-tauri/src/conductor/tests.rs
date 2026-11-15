@@ -972,8 +972,16 @@ fn a_playlist_is_one_entry_in_recently_played_and_comes_back_whole() {
     rig.status(PlaybackStatus::Paused);
 
     // Both items know the playlist they were played in, under one key.
-    let a = rig.remembered(A).unwrap().playlist.expect("played in a playlist");
-    let b = rig.remembered(B).unwrap().playlist.expect("played in a playlist");
+    let a = rig
+        .remembered(A)
+        .unwrap()
+        .playlist
+        .expect("played in a playlist");
+    let b = rig
+        .remembered(B)
+        .unwrap()
+        .playlist
+        .expect("played in a playlist");
     assert_eq!(a.key, b.key);
     let sources: Vec<_> = b.items.iter().map(|item| item.source.as_str()).collect();
     assert_eq!(sources, [A, B, C]);
@@ -1041,7 +1049,9 @@ fn another_item_of_a_recent_playlist_can_be_chosen_to_play() {
     assert_eq!(rig.current().as_deref(), Some("c"));
     assert!(matches!(rig.last_open(), Call::Open { source, .. } if source == C));
     // Something that is not in the playlist is not played in its place.
-    rig.conductor.open_recent(A, Some("/elsewhere.mkv"), true).unwrap();
+    rig.conductor
+        .open_recent(A, Some("/elsewhere.mkv"), true)
+        .unwrap();
     assert_eq!(rig.current().as_deref(), Some("a"));
 }
 
@@ -1061,4 +1071,40 @@ fn a_named_list_can_start_part_way_and_keep_what_comes_before() {
     assert_eq!(rig.titles(), ["one", "two", "three"]);
     assert_eq!(rig.current().as_deref(), Some("two"));
     assert!(matches!(rig.last_open(), Call::Open { source, .. } if source == B));
+}
+
+#[test]
+fn incognito_writes_nothing_but_still_resumes_what_was_remembered() {
+    let rig = Rig::new();
+    rig.conductor.open(&all(&[A]), true).unwrap();
+    rig.loads(A, Some(TWO_HOURS));
+    rig.at(602.0);
+    rig.status(PlaybackStatus::Paused);
+    assert_eq!(rig.remembered(A).unwrap().position, 602.0);
+    let before = rig.remembered(A).unwrap();
+    let told = rig.played();
+
+    rig.conductor.set_incognito(true);
+    // Played on, and paused: what was remembered stays as it was.
+    rig.status(PlaybackStatus::Playing);
+    rig.at(900.0);
+    rig.status(PlaybackStatus::Paused);
+    // Something new is not remembered at all, even on the way out.
+    rig.conductor.open(&all(&[B]), true).unwrap();
+    rig.loads(B, Some(TWO_HOURS));
+    rig.at(30.0);
+    rig.conductor.shutdown();
+    assert_eq!(rig.remembered(A), Some(before));
+    assert_eq!(rig.remembered(B), None);
+    assert_eq!(rig.played(), told);
+}
+
+#[test]
+fn incognito_turned_off_remembers_again() {
+    let rig = Rig::new();
+    rig.conductor.set_incognito(true);
+    rig.conductor.set_incognito(false);
+    rig.conductor.open(&all(&[B]), true).unwrap();
+    rig.loads(B, Some(TWO_HOURS));
+    assert!(rig.remembered(B).is_some());
 }

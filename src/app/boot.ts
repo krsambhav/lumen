@@ -15,7 +15,7 @@ declare global {
 
 /** Mirrors `Settings::default()` in src-tauri/src/settings.rs. */
 export const DEFAULT_SETTINGS: Settings = {
-  general: { checkForUpdates: true },
+  general: { checkForUpdates: true, incognito: false },
   appearance: {
     theme: "dark",
     accent: { kind: "preset", id: "limelight" },

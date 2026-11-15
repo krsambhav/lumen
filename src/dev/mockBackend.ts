@@ -451,7 +451,20 @@ export function installMockBackend(): LumenMock {
     };
   }
 
+  /** Pinned itself, or played in a playlist some item of which is. */
+  function pinnedAt(entry: { pinned?: boolean; playlist: { key: string } | null }): boolean {
+    const key = entry.playlist?.key;
+    return (
+      entry.pinned === true ||
+      (key !== undefined && history.some((other) => other.pinned && other.playlist?.key === key))
+    );
+  }
+
   function remember(source: string, title: string) {
+    // Incognito, as the conductor: nothing is written.
+    if (settings.general.incognito) {
+      return;
+    }
     const known = history.find((entry) => entry.source === source);
     clock += 60;
     history = [
@@ -464,6 +477,7 @@ export function installMockBackend(): LumenMock {
         playedAt: clock,
         state: known?.state ?? null,
         playlist: playedIn(),
+        pinned: known?.pinned ?? false,
         available: true,
         poster: known?.poster ?? null,
         resumesAt: known?.resumesAt ?? null,
@@ -474,6 +488,9 @@ export function installMockBackend(): LumenMock {
   }
 
   function noteProgress() {
+    if (settings.general.incognito) {
+      return;
+    }
     history = history.map((entry) =>
       entry.source === player.source
         ? {
@@ -1244,20 +1261,41 @@ export function installMockBackend(): LumenMock {
       return playlist;
     },
     historyRecent: (args) => {
-      // A playlist is listed once, by the item played last, as the backend does.
+      // A playlist is listed once, by the item played last, as the backend
+      // does; pinned if any of it is, and what is pinned comes first.
       const seen = new Set<string>();
-      const listed = history.filter((entry) => {
-        const key = entry.playlist?.key;
-        if (key === undefined) {
+      const listed = history
+        .filter((entry) => {
+          const key = entry.playlist?.key;
+          if (key === undefined) {
+            return true;
+          }
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
           return true;
-        }
-        if (seen.has(key)) {
-          return false;
-        }
-        seen.add(key);
-        return true;
-      });
-      return record("historyRecent", args, listed.slice(0, args.limit));
+        })
+        .map((entry) => ({ ...entry, pinned: pinnedAt(entry) }));
+      const ordered = [
+        ...listed.filter((entry) => entry.pinned),
+        ...listed.filter((entry) => !entry.pinned),
+      ];
+      return record("historyRecent", args, ordered.slice(0, args.limit));
+    },
+    historyPin: (args) => {
+      const target = history.find((entry) => entry.source === args.source);
+      const key = target?.playlist?.key;
+      history = history.map((entry) =>
+        entry.source === args.source || (key !== undefined && entry.playlist?.key === key)
+          ? { ...entry, pinned: args.pinned }
+          : entry,
+      );
+      record("historyPin", args, target !== undefined);
+      if (target) {
+        announceHistory();
+      }
+      return target !== undefined;
     },
     historyForget: (args) => {
       const gone = history.find((entry) => entry.source === args.source);
@@ -1291,7 +1329,8 @@ export function installMockBackend(): LumenMock {
     },
     historyClear: () => {
       record("historyClear", null, null);
-      history = [];
+      // What is pinned stays, with the rest of a pinned playlist.
+      history = history.filter(pinnedAt);
       announceHistory();
       return null;
     },

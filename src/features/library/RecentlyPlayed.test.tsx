@@ -73,6 +73,13 @@ function show() {
   );
 }
 
+/** The tiles themselves, without the controls beside them. */
+function tiles() {
+  return screen
+    .getAllByRole("button")
+    .filter((button) => button.parentElement?.hasAttribute("data-tile") === true);
+}
+
 function tile(title: string) {
   return screen.getByRole("button", { name: new RegExp(title.replace(/[()]/g, "\\$&")) });
 }
@@ -82,10 +89,7 @@ describe("recently played", () => {
     show();
     expect(screen.getByRole("region", { name: "Recently played" })).toBeInTheDocument();
     // Each tile is named by its title, said once, and says what is left of it.
-    const titles = screen
-      .getAllByRole("button")
-      .filter((button) => button.getAttribute("aria-label") !== "Clear recently played")
-      .map((button) => button.querySelector(".sr-only")?.textContent);
+    const titles = tiles().map((button) => button.querySelector(".sr-only")?.textContent);
     expect(titles).toEqual([
       "The Long Take (2019).mkv",
       "Stalker (1979).mkv",
@@ -264,8 +268,47 @@ describe("recently played", () => {
       entries: Array.from({ length: 24 }, (_, index) => entry(`Film ${index}.mkv`)),
     });
     show();
-    // Unmeasured, the grid is five across; the eleventh button is Clear.
-    expect(screen.getAllByRole("button")).toHaveLength(11);
+    // Unmeasured, the grid is five across.
+    expect(tiles()).toHaveLength(10);
+  });
+
+  it("has a pin and a remove button on every tile", async () => {
+    const pin = vi.fn((_: { source: string; pinned: boolean }) => true);
+    mockCommands({
+      historyPin: pin,
+      historyForget: forget,
+      historyRecent: () => useRecents.getState().entries,
+    });
+    show();
+    const cell = tile("Stalker").closest("[data-tile]") as HTMLElement;
+    await userEvent.click(within(cell).getByRole("button", { name: "Pin to recently played" }));
+    expect(pin).toHaveBeenCalledWith({ source: "/films/Stalker (1979).mkv", pinned: true });
+    // Pinned at once, and its button now unpins.
+    const unpin = within(cell).getByRole("button", { name: "Unpin" });
+    expect(unpin).toHaveAttribute("aria-pressed", "true");
+    expect(cell).toHaveAttribute("data-pinned");
+
+    await userEvent.click(
+      within(tile("Clip").closest("[data-tile]") as HTMLElement).getByRole("button", {
+        name: "Remove from recently played",
+      }),
+    );
+    expect(forget).toHaveBeenCalledWith({ source: "/films/Clip.mp4" });
+    expect(screen.queryByRole("button", { name: /Clip/ })).not.toBeInTheDocument();
+  });
+
+  it("cannot clear when everything left is pinned", async () => {
+    const run = vi.fn();
+    registerActions([
+      { id: "history.clear", name: "Clear recently played", category: "file", shortcuts: [], run },
+    ]);
+    useRecents.setState({ entries: [entry("Kept.mkv", { pinned: true })] });
+    show();
+    const clear = screen.getByRole("button", { name: "Clear recently played" });
+    expect(clear).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(clear);
+    expect(run).not.toHaveBeenCalled();
+    clearActions();
   });
 });
 

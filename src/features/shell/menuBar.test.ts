@@ -204,7 +204,7 @@ describe("the menu bar", () => {
       },
     ]);
     useSettings.setState({
-      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false } },
+      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false, incognito: false } },
     });
     expect(flat(appMenuItems()).find((entry) => entry.id === "app.automaticUpdates")).toMatchObject(
       { checked: false },
@@ -516,7 +516,7 @@ describe("keeping the menu bar in step", () => {
 
     // The switch's tick follows the setting.
     useSettings.setState({
-      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false } },
+      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false, incognito: false } },
     });
     vi.advanceTimersByTime(80);
     expect(sent()).toBe(3);

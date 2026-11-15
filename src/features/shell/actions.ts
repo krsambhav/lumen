@@ -1,9 +1,12 @@
-import { Bell, BookOpen, History, Search, Undo2 } from "lucide-react";
+import { Bell, BookOpen, HatGlasses, History, Search, Undo2 } from "lucide-react";
 import type { Action } from "@/actions/registry";
 import { useRecents } from "@/features/library/recents";
 import { usePalette } from "@/features/palette/store";
-import { needsMedia } from "@/features/player/actions";
+import { confirm, needsMedia } from "@/features/player/actions";
+import { hasMedia, usePlayer } from "@/features/player/store";
 import { showing } from "@/features/playlist/actions";
+import { changeSettings } from "@/features/settings/change";
+import { useSettings } from "@/features/settings/store";
 import { commands } from "@/ipc";
 import { notifyFailure, send, undoable, undoNewest } from "@/lib/notify";
 import { canUndo } from "@/lib/undo";
@@ -14,12 +17,13 @@ function toastList(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-sonner-toaster]");
 }
 
-/** Forgets everything that was played, with a toast that can undo it. */
+/** Forgets everything that was played and is not pinned, with a toast that can undo it. */
 function clearRecents(): void {
-  const before = useRecents.getState().entries;
+  const all = useRecents.getState().entries;
+  const before = all.filter((entry) => !entry.pinned);
   // Gone from the screen at once. The backend says when the history has
   // changed, and it is read again then.
-  useRecents.setState({ entries: [] });
+  useRecents.setState({ entries: all.filter((entry) => entry.pinned) });
   void commands.historyClear().then((result) => {
     if (result.status === "error") {
       notifyFailure("clear what was played", result.error);
@@ -35,6 +39,11 @@ function clearRecents(): void {
       },
     });
   });
+}
+
+/** Nothing played now is remembered, nor any search. */
+export function incognito(): boolean {
+  return useSettings.getState().settings.general.incognito;
 }
 
 /** Actions of the window as a whole: the palette, the panel, notifications, history. */
@@ -102,8 +111,33 @@ export const shellActions: readonly Action[] = [
     category: "file",
     icon: History,
     shortcuts: ["Shift+Cmd+Backspace"],
-    unavailable: () =>
-      useRecents.getState().entries.length === 0 ? "Nothing has been played" : undefined,
+    unavailable: () => {
+      const entries = useRecents.getState().entries;
+      if (entries.length === 0) {
+        return "Nothing has been played";
+      }
+      return entries.every((entry) => entry.pinned) ? "Everything left is pinned" : undefined;
+    },
     run: clearRecents,
+  },
+  {
+    id: "history.incognito",
+    name: "Incognito",
+    keywords: ["private", "privacy", "history", "don't remember", "secret"],
+    category: "file",
+    icon: HatGlasses,
+    shortcuts: ["Shift+Cmd+n"],
+    // A switch, ticked in the menu bar while it is on, as "Check for updates automatically" is.
+    checked: incognito,
+    run: (context) => {
+      const on = !incognito();
+      changeSettings((current) => ({ ...current, general: { ...current.general, incognito: on } }));
+      // The home screen says so where it is looked at; over a film nothing else would.
+      if (hasMedia(usePlayer.getState())) {
+        confirm(context, {
+          label: on ? "Incognito: nothing played is remembered" : "Incognito off",
+        });
+      }
+    },
   },
 ];

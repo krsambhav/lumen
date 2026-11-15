@@ -255,6 +255,8 @@ export const MENU_BAR: readonly { name: string; items: readonly (string | Submen
       "-",
       "playlist.save",
       "playlist.clear",
+      "-",
+      "history.incognito",
     ],
   },
   {

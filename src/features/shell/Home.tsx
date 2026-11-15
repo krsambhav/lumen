@@ -1,4 +1,4 @@
-import { CircleAlert, Search } from "lucide-react";
+import { CircleAlert, HatGlasses, Search } from "lucide-react";
 import { useId, useState } from "react";
 import { runAction, shortcutFor } from "@/actions/registry";
 import { Button } from "@/components/ui/button";
@@ -6,10 +6,12 @@ import { Shortcut } from "@/components/ui/shortcut";
 import { RecentlyPlayed } from "@/features/library/RecentlyPlayed";
 import { useRecents } from "@/features/library/recents";
 import { usePalette } from "@/features/palette/store";
+import { ActionButton } from "@/features/player/ActionButton";
 import { openSources } from "@/features/playlist/actions";
 import { readAddress } from "@/features/playlist/address";
 import { SavedPlaylists } from "@/features/playlist/SavedPlaylists";
 import { useSaved } from "@/features/playlist/saved";
+import { useSettings } from "@/features/settings/store";
 import { commands, type FailureReason } from "@/ipc";
 import { cn } from "@/lib/cn";
 import { send } from "@/lib/notify";
@@ -40,6 +42,7 @@ export function Home({ dropping, failure = null }: HomeProps) {
   const reveal = failure?.reveal ?? null;
   const played = useRecents((state) => state.entries.length > 0);
   const kept = useSaved((state) => state.entries.length > 0);
+  const incognito = useSettings((state) => state.settings.general.incognito);
   // Something to come back to: what was played, or a playlist that was saved.
   const history = played || kept;
   return (
@@ -118,7 +121,22 @@ export function Home({ dropping, failure = null }: HomeProps) {
               </Button>
             ) : null}
             <FindField />
+            {/* At the field's height, so the row keeps one line of controls. */}
+            <ActionButton action="history.incognito" pressed={incognito} className="size-9">
+              <HatGlasses aria-hidden="true" />
+            </ActionButton>
           </div>
+          {incognito ? (
+            <p
+              data-incognito=""
+              className="mt-3 flex max-w-[68ch] items-center gap-2 text-caption text-ink-2"
+            >
+              <HatGlasses aria-hidden="true" className="size-3.5 flex-none text-ink-3" />
+              <span className="min-w-0">
+                Incognito: nothing you play or search for now is remembered.
+              </span>
+            </p>
+          ) : null}
         </div>
       </div>
       {played ? (

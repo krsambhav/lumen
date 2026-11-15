@@ -64,7 +64,24 @@ pub async fn history_restore(
     Ok(())
 }
 
-/// Forgets everything that was played.
+/// Pins something to Recently played, or unpins it. A pinned entry is
+/// listed first and outlasts "Clear". Returns whether it was there.
+#[tauri::command]
+#[specta::specta]
+pub async fn history_pin(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    source: String,
+    pinned: bool,
+) -> AppResult<bool> {
+    let changed = history::pin(&state.db, &source, pinned)?;
+    if changed {
+        announce(&app);
+    }
+    Ok(changed)
+}
+
+/// Forgets everything that was played and is not pinned.
 #[tauri::command]
 #[specta::specta]
 pub async fn history_clear(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {

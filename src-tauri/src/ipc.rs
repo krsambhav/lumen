@@ -82,6 +82,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::history::history_recent,
             commands::history::history_forget,
             commands::history::history_restore,
+            commands::history::history_pin,
             commands::history::history_clear,
             commands::files::files_show_in_finder,
             commands::torrents::torrents_search,

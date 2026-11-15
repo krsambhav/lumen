@@ -44,6 +44,10 @@ pub struct HistoryEntry {
     pub state: Option<FileState>,
     /// The playlist it was last played in, if it was not played alone.
     pub playlist: Option<PlayedIn>,
+    /// Pinned to Recently played: listed first, and kept when the rest is
+    /// cleared. For a playlist, true if any of its items is pinned.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// A playlist as it stood when one of its items was played: enough to
@@ -145,10 +149,14 @@ fn entry(row: &Row) -> rusqlite::Result<HistoryEntry> {
             .get::<_, Option<String>>(7)?
             .and_then(|json| serde_json::from_str::<PlayedIn>(&json).ok())
             .filter(|playlist| playlist.items.len() > 1),
+        pinned: row.get::<_, i64>(8)? != 0,
     })
 }
 
-const COLUMNS: &str = "source, title, duration, position, finished, played_at, state, playlist";
+/// `pinned` is read for the playlist as a whole: one pinned item pins all of it.
+const COLUMNS: &str = "source, title, duration, position, finished, played_at, state, playlist,
+    pinned OR (playlist IS NOT NULL AND EXISTS (SELECT 1 FROM history AS other
+        WHERE other.pinned AND json_extract(other.playlist, '$.key') = json_extract(history.playlist, '$.key')))";
 
 fn stored_playlist(playlist: Option<&PlayedIn>) -> Option<String> {
     playlist.and_then(|playlist| serde_json::to_string(playlist).ok())
@@ -250,6 +258,7 @@ pub fn recent(db: &Db, limit: u32) -> AppResult<Vec<HistoryEntry>> {
         let mut statement = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM history ORDER BY played_at DESC, source"
         ))?;
+        let mut pinned = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut found = Vec::new();
         for row in statement.query_map([], entry)? {
@@ -259,13 +268,17 @@ pub fn recent(db: &Db, limit: u32) -> AppResult<Vec<HistoryEntry>> {
                 .as_ref()
                 .is_none_or(|playlist| seen.insert(playlist.key.clone()));
             if first {
-                found.push(row);
-                if found.len() >= limit as usize {
-                    break;
+                if row.pinned {
+                    pinned.push(row);
+                } else {
+                    found.push(row);
                 }
             }
         }
-        Ok(found)
+        // What is pinned comes first, newest first among itself.
+        pinned.extend(found);
+        pinned.truncate(limit as usize);
+        Ok(pinned)
     })
 }
 
@@ -274,8 +287,8 @@ pub fn restore(db: &Db, entry: &HistoryEntry) -> AppResult<()> {
     db.write(|tx| {
         tx.execute(
             "INSERT OR REPLACE INTO history
-                (source, title, duration, position, finished, played_at, state, playlist)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (source, title, duration, position, finished, played_at, state, playlist, pinned)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 entry.source,
                 entry.title,
@@ -284,7 +297,8 @@ pub fn restore(db: &Db, entry: &HistoryEntry) -> AppResult<()> {
                 i64::from(entry.finished),
                 entry.played_at,
                 stored(entry.state.as_ref()),
-                stored_playlist(entry.playlist.as_ref())
+                stored_playlist(entry.playlist.as_ref()),
+                i64::from(entry.pinned)
             ],
         )?;
         Ok(())
@@ -308,10 +322,34 @@ pub fn forget(db: &Db, source: &str) -> AppResult<bool> {
     })
 }
 
-/// Forgets everything.
+/// Pins `source` to Recently played, or unpins it, with the rest of the
+/// playlist it was played in. Returns whether there was such an entry.
+pub fn pin(db: &Db, source: &str, pinned: bool) -> AppResult<bool> {
+    let key = find(db, source)?.and_then(|entry| entry.playlist.map(|playlist| playlist.key));
+    db.write(|tx| {
+        let mut changed = tx.execute(
+            "UPDATE history SET pinned = ?2 WHERE source = ?1",
+            params![source, i64::from(pinned)],
+        )?;
+        if let Some(key) = key {
+            changed += tx.execute(
+                "UPDATE history SET pinned = ?2 WHERE json_extract(playlist, '$.key') = ?1",
+                params![key, i64::from(pinned)],
+            )?;
+        }
+        Ok(changed > 0)
+    })
+}
+
+/// Forgets everything that is not pinned, and the rest of a pinned
+/// playlist is kept with it.
 pub fn clear(db: &Db) -> AppResult<()> {
     db.write(|tx| {
-        tx.execute("DELETE FROM history", [])?;
+        tx.execute(
+            "DELETE FROM history WHERE NOT pinned AND (playlist IS NULL OR json_extract(playlist, '$.key')
+                NOT IN (SELECT json_extract(playlist, '$.key') FROM history WHERE pinned AND playlist IS NOT NULL))",
+            [],
+        )?;
         Ok(())
     })
 }
@@ -526,6 +564,7 @@ mod tests {
             played_at: 1,
             state: None,
             playlist: None,
+            pinned: false,
         };
         assert!(Recent::of(entry(&here.to_string_lossy()), None).available);
         assert!(!Recent::of(entry("/no/such/film.mkv"), None).available);
@@ -547,6 +586,7 @@ mod tests {
                     played_at: 1,
                     state: None,
                     playlist: None,
+                    pinned: false,
                 },
                 None,
             )
@@ -619,7 +659,11 @@ mod tests {
         opened(&db, "/e2.mkv", "e2", Some(&show), 200).unwrap();
         opened(&db, "/film.mkv", "film", None, 150).unwrap();
         assert!(forget(&db, "/e2.mkv").unwrap());
-        let left: Vec<_> = recent(&db, 10).unwrap().into_iter().map(|e| e.source).collect();
+        let left: Vec<_> = recent(&db, 10)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.source)
+            .collect();
         assert_eq!(left, ["/film.mkv"]);
         // Put back, it is the playlist again.
         let mut entry = find(&db, "/film.mkv").unwrap().unwrap();
@@ -627,5 +671,47 @@ mod tests {
         entry.playlist = Some(show.clone());
         restore(&db, &entry).unwrap();
         assert_eq!(find(&db, "/e2.mkv").unwrap().unwrap().playlist, Some(show));
+    }
+
+    #[test]
+    fn what_is_pinned_comes_first_and_outlasts_clear() {
+        let db = Db::in_memory().unwrap();
+        let show = in_playlist("1-0", &["/e1.mkv", "/e2.mkv"]);
+        opened(&db, "/a.mkv", "a", None, 100).unwrap();
+        opened(&db, "/e1.mkv", "e1", Some(&show), 150).unwrap();
+        opened(&db, "/b.mkv", "b", None, 200).unwrap();
+        assert!(pin(&db, "/a.mkv", true).unwrap());
+        assert!(pin(&db, "/e1.mkv", true).unwrap());
+        // Another episode played later stands for the playlist, pinned still.
+        opened(&db, "/e2.mkv", "e2", Some(&show), 300).unwrap();
+        let listed: Vec<_> = recent(&db, 10)
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.source, entry.pinned))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("/e2.mkv".to_owned(), true),
+                ("/a.mkv".to_owned(), true),
+                ("/b.mkv".to_owned(), false)
+            ]
+        );
+        clear(&db).unwrap();
+        let kept: Vec<_> = recent(&db, 10)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.source)
+            .collect();
+        assert_eq!(kept, ["/e2.mkv", "/a.mkv"]);
+        assert!(find(&db, "/e1.mkv").unwrap().is_some());
+        // Unpinned, it goes with the next clear; put back, it is pinned again.
+        let a = find(&db, "/a.mkv").unwrap().unwrap();
+        pin(&db, "/a.mkv", false).unwrap();
+        clear(&db).unwrap();
+        assert_eq!(find(&db, "/a.mkv").unwrap(), None);
+        restore(&db, &a).unwrap();
+        assert!(find(&db, "/a.mkv").unwrap().unwrap().pinned);
+        assert!(!pin(&db, "/none.mkv", true).unwrap());
     }
 }

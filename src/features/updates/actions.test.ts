@@ -105,7 +105,7 @@ describe("checking for updates", () => {
     await flush();
     expect(action?.checked?.()).toBe(false);
     expect(settingsSet).toHaveBeenCalledWith({
-      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false } },
+      settings: { ...DEFAULT_SETTINGS, general: { checkForUpdates: false, incognito: false } },
     });
 
     runAction("app.automaticUpdates", "menu");

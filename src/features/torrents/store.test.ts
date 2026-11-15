@@ -1,5 +1,7 @@
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_SETTINGS } from "@/app/boot";
+import { useSettings } from "@/features/settings/store";
 import type { TorrentResult } from "@/ipc";
 import { mockCommands } from "@/ipc/bindings";
 import { useTorrents } from "./store";
@@ -19,7 +21,8 @@ const RESULT: TorrentResult = {
 
 afterEach(() => {
   clearMocks();
-  useTorrents.setState({ search: { status: "idle" }, fetching: null });
+  useTorrents.setState({ search: { status: "idle" }, fetching: null, history: [] });
+  useSettings.setState({ settings: DEFAULT_SETTINGS });
 });
 
 describe("torrent search", () => {
@@ -53,5 +56,21 @@ describe("torrent search", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const search = useTorrents.getState().search;
     expect(search.status === "done" && search.query).toBe("Mobland");
+  });
+
+  it("searches but remembers nothing while incognito", async () => {
+    mockCommands({ torrentsSearch: () => [RESULT] });
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, general: { ...DEFAULT_SETTINGS.general, incognito: true } },
+    });
+    useTorrents.getState().find("Something private");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(useTorrents.getState().search.status).toBe("done");
+    expect(useTorrents.getState().history).toEqual([]);
+    expect(localStorage.getItem("lumen.torrent-searches") ?? "[]").not.toContain("private");
+
+    useSettings.setState({ settings: DEFAULT_SETTINGS });
+    useTorrents.getState().find("Something else");
+    expect(useTorrents.getState().history).toEqual(["Something else"]);
   });
 });
