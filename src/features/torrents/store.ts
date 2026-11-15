@@ -138,6 +138,17 @@ export const useTorrents = create<TorrentsState>((set, get) => {
         description: file.name.replace(/\.[^.]+$/, ""),
         classNames: { description: "truncate text-ink-2" },
         duration: TWO_LINES_MS,
+        // It is next in the playlist, so playing it now is going on to the next.
+        action: {
+          label: "Play now",
+          onClick: () => {
+            void commands.playlistNext().then((moved) => {
+              if (moved.status === "error") {
+                notifyFailure("play that", moved.error);
+              }
+            });
+          },
+        },
       });
     });
   }

@@ -371,6 +371,34 @@ test.describe("the command palette", () => {
       ).toEqual([]);
     }
   });
+
+  test("puts a torrent next, and offers to play it now", async ({ page }) => {
+    await openFilm(page);
+    await page.keyboard.press("Meta+f");
+    await page.keyboard.type("MobLand");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("option", { name: /MobLand S02E10/ }).first()).toBeVisible();
+    // ⌘↩ on the row in hand: Play next.
+    await page.keyboard.press("Meta+Enter");
+
+    const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Plays next" });
+    await expect(toast).toBeVisible({ timeout: 10_000 });
+    await expect(calls(page, "torrentsPlayNext")).resolves.toHaveLength(1);
+    const playNow = toast.getByRole("button", { name: "Play now" });
+    await expect(playNow).toBeVisible();
+
+    // The name gives way to the button: nothing overlaps, and the button sits inside the toast.
+    const [card, button, name] = await Promise.all([
+      box(toast),
+      box(playNow),
+      box(toast.locator("[data-description]")),
+    ]);
+    expect(name.x + name.width).toBeLessThanOrEqual(button.x);
+    expect(button.x + button.width).toBeLessThanOrEqual(card.x + card.width);
+
+    await playNow.click();
+    await expect.poll(() => calls(page, "playlistNext")).toHaveLength(1);
+  });
 });
 
 test.describe("the command palette in the smallest window", () => {

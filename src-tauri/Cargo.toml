@@ -1,6 +1,6 @@
 [package]
 name = "lumen"
-version = "0.2.11"
+version = "0.2.12"
 description = "A video player for macOS"
 edition = "2021"
 rust-version = "1.88"
