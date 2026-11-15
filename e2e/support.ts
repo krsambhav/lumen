@@ -146,6 +146,16 @@ export function calls(page: Page, command: string) {
 }
 
 /** The wrapper whose opacity is the control bar's visibility. */
+/**
+ * Moves the pointer over the picture, as a person reaching for a control
+ * does: the stage's chrome fades 0.2 s after the pointer stops, and a click
+ * from Playwright checks what is under its target before it moves there.
+ */
+export async function wakeChrome(page: Page) {
+  await page.mouse.move(560, 300);
+  await page.mouse.move(580, 320, { steps: 2 });
+}
+
 export function controlBar(page: Page): Locator {
   return page
     .getByRole("group", { name: "Player controls" })

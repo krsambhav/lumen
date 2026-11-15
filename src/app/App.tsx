@@ -10,7 +10,7 @@ import { Inspector } from "@/features/inspector/Inspector";
 import { connectPosters, connectRecents, useRecents } from "@/features/library/recents";
 import { Palette } from "@/features/palette/Palette";
 import { usePalette } from "@/features/palette/store";
-import { useChrome } from "@/features/player/chrome";
+import { connectChromePointer, useChrome } from "@/features/player/chrome";
 import { connectPlaybackNotices } from "@/features/player/notices";
 import { showOsd } from "@/features/player/osd";
 import { Stage } from "@/features/player/Stage";
@@ -125,6 +125,9 @@ export function App() {
   }, [open, panelLeft]);
   const panel = panelWanted || panelLeaving;
   usePanelRoom(panelWanted);
+
+  // A pointer on a control keeps the stage's chrome; one that leaves the window lets it go.
+  useEffect(() => connectChromePointer(), []);
 
   useEffect(() => {
     if (!isTauri()) {

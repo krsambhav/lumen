@@ -438,16 +438,38 @@ test.describe("chrome", () => {
     await expect(bar).toHaveCSS("opacity", "0", { timeout: 4000 });
   });
 
-  test("a pointer left on Play does not pin it for the whole film", async ({ page }) => {
+  test("a pointer on a button keeps it while the film plays; between the buttons, 0.4 s", async ({
+    page,
+  }) => {
     await openFilm(page);
     const bar = controlBar(page);
     await playButton(page).click();
     await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
-    // Resting on the control keeps it a little longer than the picture would...
-    await page.waitForTimeout(2300);
+    // On a button, nothing vanishes from under the pointer, however long it stays.
+    await page.waitForTimeout(2500);
     await expect(bar).toHaveCSS("opacity", "1");
-    // ...but only three seconds while the film runs.
-    await expect(bar).toHaveCSS("opacity", "0", { timeout: 2500 });
+    // On the bar between its controls (the room in the middle of the row,
+    // level with the buttons), it goes 0.4 s after the pointer stops.
+    const pause = await page.getByRole("button", { name: "Pause" }).boundingBox();
+    await page.mouse.move(560, (pause?.y ?? 0) + (pause?.height ?? 0) / 2, { steps: 3 });
+    expect(
+      await page.evaluate(
+        () =>
+          document.querySelector(":hover:not(:has(:hover))")?.closest("button, [role='slider']") ??
+          null,
+      ),
+    ).toBeNull();
+    await expect(bar).toHaveCSS("opacity", "0", { timeout: 2000 });
+  });
+
+  test("goes 0.2 s after the pointer leaves the window, even from a button", async ({ page }) => {
+    await openFilm(page);
+    const bar = controlBar(page);
+    await playButton(page).click();
+    await page.waitForTimeout(800);
+    await expect(bar).toHaveCSS("opacity", "1");
+    await page.evaluate(() => document.documentElement.dispatchEvent(new MouseEvent("mouseleave")));
+    await expect(bar).toHaveCSS("opacity", "0", { timeout: 1500 });
   });
 
   test("a pointer resting on the controls keeps it while paused", async ({ page }) => {
@@ -956,6 +978,9 @@ test.describe("when a command fails", () => {
     await expect(toast).toContainText(
       "The playback engine reported: error running command. Try again, or open the file again.",
     );
+    // Sonner starts the slide in a frame after the toast is drawn: before
+    // then there is no animation for `settle` to wait for.
+    await expect(toast).toHaveAttribute("data-mounted", "true");
     await settle(page);
     const rect = await box(toast);
     // At the right gutter, 356 px wide.

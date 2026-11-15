@@ -17,6 +17,7 @@ import {
   tab,
   test,
   WCAG,
+  wakeChrome,
 } from "./support";
 
 const WIDTH = 1120 + PANEL;
@@ -763,6 +764,7 @@ test.describe("the panel's colours and its going", () => {
     page,
   }) => {
     await openQueue(page);
+    await wakeChrome(page);
     await page.getByRole("button", { name: "Show playlist" }).click();
     await expect(page.getByRole("listbox", { name: "Playlist" })).toBeVisible();
     await expect(page.getByRole("listbox", { name: "Playlist" })).not.toBeFocused();
