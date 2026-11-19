@@ -168,13 +168,11 @@ pub struct Anchor {
 
 /// What the platform must provide for AirPlay.
 pub trait AirPlayHost: Send + Sync {
-    /// Makes an AirPlay target. With a `device` name it plays there; without
-    /// one, or if that device cannot be reached that way, the system's picker
-    /// opens at `anchor` to choose.
+    /// Routes to the selected receiver, or opens the picker for an explicit choice.
     fn open(
         &self,
         anchor: Anchor,
-        device: Option<String>,
+        device: Option<CastDevice>,
         events: EventSink,
     ) -> Arc<dyn AirPlayTarget>;
     /// Starts finding AirPlay devices ahead of being asked to play on one.
@@ -404,7 +402,7 @@ impl Caster {
             AppError::NotFound("that device is no longer on the network".to_owned())
         })?;
         if found.device.protocol == CastProtocol::AirPlay {
-            return self.open_airplay(anchor, Some(found.device));
+            return self.open_airplay(anchor, Some(found));
         }
         let source = self.open_source()?;
         if is_address(&source) && !source.starts_with("http") {
@@ -476,7 +474,7 @@ impl Caster {
 
     /// Starts an AirPlay session: on `device` if one was chosen from the list,
     /// otherwise through the system's picker.
-    fn open_airplay(&self, anchor: Anchor, device: Option<CastDevice>) -> AppResult<()> {
+    fn open_airplay(&self, anchor: Anchor, receiver: Option<discovery::Found>) -> AppResult<()> {
         let host = self
             .airplay
             .clone()
@@ -492,11 +490,12 @@ impl Caster {
             inner.generation += 1;
             inner.generation
         };
-        let target = host.open(
-            anchor,
-            device.as_ref().map(|device| device.name.clone()),
-            self.sink(generation),
-        );
+        let address = receiver
+            .as_ref()
+            .and_then(|found| server::local_address_toward(found.address.ip()))
+            .or_else(server::local_address);
+        let device = receiver.map(|found| found.device);
+        let target = host.open(anchor, device.clone(), self.sink(generation));
         {
             let chosen = device.is_some();
             let mut session = Session::new(
@@ -519,7 +518,7 @@ impl Caster {
             let as_target: Arc<dyn CastTarget> = target.clone();
             session.target = Some(as_target);
             session.airplay = Some(target);
-            session.host = server::local_address();
+            session.host = address;
             self.inner.lock().session = Some(session);
         }
         self.changed();

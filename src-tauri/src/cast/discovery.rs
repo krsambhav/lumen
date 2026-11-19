@@ -1,7 +1,7 @@
 //! Finding cast devices on the local network, by multicast DNS: Google
 //! Cast devices, and AirPlay receivers (Apple TVs, TVs with AirPlay, other
-//! Macs). An AirPlay device found here is only a name to offer; playing on
-//! it goes through AVFoundation, which finds it again by that name.
+//! Macs). Bonjour supplies the receiver identity and network address
+//! used for direct AirPlay routing and stream delivery.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
