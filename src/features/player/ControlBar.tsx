@@ -395,16 +395,12 @@ export function ControlBar() {
       <div
         role="group"
         aria-label="Player controls"
+        data-chrome-aim=""
         className="pointer-events-auto absolute inset-x-0 bottom-0 flex flex-col px-gutter pb-2.5"
         onPointerEnter={() => rest("controls", true)}
         onPointerLeave={() => rest("controls", false)}
       >
-        {/*
-          The seek bar's band, edge to edge and from the top of the bar down
-          to the buttons: a pointer anywhere on it is aimed at the seek bar,
-          and the chrome stays for as long as it is there (chrome.ts).
-        */}
-        <div data-chrome-aim="" className="-mx-gutter px-gutter pt-1.5">
+        <div className="-mx-gutter px-gutter pt-1.5">
           <Timeline />
         </div>
         {/*
