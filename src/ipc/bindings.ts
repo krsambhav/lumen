@@ -278,14 +278,11 @@ export const commands = {
 	 *  time, macOS may ask whether Lumen may use the local network.
 	 */
 	castSearch: (options?: InvokeOptions) => __TAURI_INVOKE<void>("cast_search", undefined, options),
-	/**
-	 *  Casts what is open to a device found by the search. `anchor` is the cast
-	 *  button, where the AirPlay picker of macOS opens if an AirPlay device
-	 *  cannot be reached directly.
-	 */
+	/**  Casts what is open to a device found by the search. */
 	castStart: (device: string, anchor: Anchor, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_start", { device, anchor }, options)),
 	/**  Opens the AirPlay picker of macOS over `anchor`, the cast button. */
 	castAirplay: (anchor: Anchor, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_airplay", { anchor }, options)),
+	castPair: (pin: string, options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_pair", { pin }, options)),
 	/**  Stops casting; the Mac takes over, paused where the TV was. */
 	castStop: (options?: InvokeOptions) => typedError<null, AppError>(__TAURI_INVOKE("cast_stop", undefined, options)),
 	/**
@@ -419,7 +416,7 @@ export type CastFailed = string;
 
 export type CastPhase = 
 /**  The AirPlay picker of macOS is open and nothing is chosen yet. */
-"choosing" | 
+"choosing" | "pairing" |
 /**  Reaching the device and starting its player. */
 "connecting" | 
 /**  The film is on the TV. */
@@ -1230,6 +1227,7 @@ export type MockCommandHandlers = {
     castSearch: () => void | Promise<void>,
     castStart: (args: { device: string; anchor: Anchor }) => null | Promise<null>,
     castAirplay: (args: { anchor: Anchor }) => null | Promise<null>,
+    castPair: (args: { pin: string }) => null | Promise<null>,
     castStop: () => null | Promise<null>,
     updateStatus: () => UpdateStatus | Promise<UpdateStatus>,
     updateCheck: () => UpdateStatus | Promise<UpdateStatus>,
@@ -1336,6 +1334,7 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "cast_search": return mockCommandHandler(mockHandlers.castSearch, "cast_search", args);
             case "cast_start": return mockCommandHandler(mockHandlers.castStart, "cast_start", args);
             case "cast_airplay": return mockCommandHandler(mockHandlers.castAirplay, "cast_airplay", args);
+            case "cast_pair": return mockCommandHandler(mockHandlers.castPair, "cast_pair", args);
             case "cast_stop": return mockCommandHandler(mockHandlers.castStop, "cast_stop", args);
             case "update_status": return mockCommandHandler(mockHandlers.updateStatus, "update_status", args);
             case "update_check": return mockCommandHandler(mockHandlers.updateCheck, "update_check", args);

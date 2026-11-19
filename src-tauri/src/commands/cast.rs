@@ -46,3 +46,9 @@ pub async fn cast_stop(cast: State<'_, Arc<Caster>>) -> AppResult<()> {
     cast.stop();
     Ok(())
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn cast_pair(cast: State<'_, Arc<Caster>>, pin: String) -> AppResult<()> {
+    cast.pair(&pin)
+}

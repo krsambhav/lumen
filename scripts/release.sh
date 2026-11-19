@@ -80,6 +80,8 @@ build() {
     say
   fi
 
+  scripts/airplay/build.sh
+
   # The archive is only made, and signed, when the key is in the environment.
   TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY")" \
     TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${LUMEN_UPDATER_KEY_PASSWORD:-}" \

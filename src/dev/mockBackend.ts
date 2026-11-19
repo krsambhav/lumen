@@ -986,6 +986,7 @@ export function installMockBackend(): LumenMock {
       );
       return record("castStart", args, null);
     },
+    castPair: () => null,
     castAirplay: (args) => record("castAirplay", args, null),
     castStop: () => {
       sayCast({ ...cast, session: null });

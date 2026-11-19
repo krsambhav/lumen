@@ -1,4 +1,7 @@
 import { Airplay, Cast } from "lucide-react";
+import { useState } from "react";
+import { commands } from "@/ipc";
+import { send } from "@/lib/notify";
 import { useCast } from "./store";
 
 const DELIVERY_NOTE = {
@@ -18,7 +21,7 @@ export function CastStage() {
     return null;
   }
   const Icon = session.protocol === "airPlay" ? Airplay : Cast;
-  const connecting = session.phase === "connecting";
+  const connecting = session.phase === "connecting" || session.phase === "pairing";
   const note = session.delivery === null ? null : DELIVERY_NOTE[session.delivery];
   return (
     <div
@@ -35,10 +38,43 @@ export function CastStage() {
           </span>
           <span className="max-w-full truncate text-title text-stage-ink">{session.device}</span>
         </div>
+        {session.phase === "pairing" && <PairingCode key={session.device} />}
         {note !== null && !connecting ? (
           <span className="text-caption text-stage-ink-2">{note}</span>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function PairingCode() {
+  const [pin, setPin] = useState("");
+  return (
+    <form
+      className="pointer-events-auto flex flex-col items-center gap-2 text-stage-ink"
+      onSubmit={(event) => {
+        event.preventDefault();
+        send("pair with Apple TV", commands.castPair(pin));
+      }}
+    >
+      <label htmlFor="airplay-pin">Enter the code shown on your TV</label>
+      <input
+        id="airplay-pin"
+        className="w-24 rounded bg-void p-2 text-center"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        pattern="[0-9]{4}"
+        maxLength={4}
+        required
+        value={pin}
+        onChange={(event) => setPin(event.target.value.replace(/[^0-9]/g, ""))}
+      />
+      <button type="submit" disabled={pin.length !== 4}>
+        Pair with TV
+      </button>
+      <button type="button" onClick={() => send("cancel pairing", commands.castStop())}>
+        Cancel
+      </button>
+    </form>
   );
 }

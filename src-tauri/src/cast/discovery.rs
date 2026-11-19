@@ -57,6 +57,10 @@ pub fn airplay_from(
             video,
         },
         address: SocketAddr::new(address, port),
+        paired_video: model.starts_with("AppleTV")
+            && property("osvers")
+                .and_then(|v| v.split('.').next()?.parse::<u32>().ok())
+                .is_some_and(|v| v >= 26),
         hevc: true,
     })
 }
@@ -122,6 +126,7 @@ fn read_airplay(service: &mdns_sd::ResolvedService, own: &str) -> Option<Found> 
 pub struct Found {
     pub device: CastDevice,
     pub address: SocketAddr,
+    pub paired_video: bool,
     /// It decodes HEVC (Chromecast Ultra, Google TV).
     pub hevc: bool,
 }
@@ -157,6 +162,7 @@ pub fn device_from(
             video,
         },
         address: SocketAddr::new(address, port),
+        paired_video: false,
         hevc,
     })
 }
@@ -320,6 +326,7 @@ mod tests {
             "Living Room._airplay._tcp.local.",
             txt(&[
                 ("model", "AppleTV14,1"),
+                ("osvers", "27.2"),
                 ("features", "0x5A7FFFF7,0x1E"),
                 ("deviceid", "AA:BB"),
             ]),
@@ -328,6 +335,7 @@ mod tests {
             "Kumar’s MacBook Pro",
         )
         .unwrap();
+        assert!(tv.paired_video);
         assert_eq!(tv.device.name, "Living Room");
         assert_eq!(tv.device.id, "airplay:AA:BB");
         assert_eq!(tv.device.model, "Apple TV");

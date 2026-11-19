@@ -99,6 +99,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::cast::cast_search,
             commands::cast::cast_start,
             commands::cast::cast_airplay,
+            commands::cast::cast_pair,
             commands::cast::cast_stop,
             commands::updates::update_status,
             commands::updates::update_check,

@@ -9,6 +9,7 @@
 //! second set of controls, and a playlist goes on to its next item on the
 //! TV just as it does on the Mac.
 
+mod apple_tv;
 pub mod chromecast;
 pub mod discovery;
 pub mod media;
@@ -58,6 +59,7 @@ pub struct CastDevice {
 pub enum CastPhase {
     /// The AirPlay picker of macOS is open and nothing is chosen yet.
     Choosing,
+    Pairing,
     /// Reaching the device and starting its player.
     Connecting,
     /// The film is on the TV.
@@ -95,6 +97,7 @@ pub enum RemoteState {
 /// What a device says.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TargetEvent {
+    Pairing(bool),
     /// It is ready for, or now showing, the film. AirPlay names the device.
     Active(Option<String>),
     /// `at` is in the device's time: seconds into what it was given.
@@ -141,6 +144,11 @@ pub struct Loadable {
 /// One protocol's way of playing on a device.
 pub trait CastTarget: Send + Sync {
     fn load(&self, media: Loadable);
+    fn pair(&self, _pin: &str) {}
+    /// This sender accepts a fresh HLS stream at each seek position.
+    fn seeks_with_new_stream(&self) -> bool {
+        false
+    }
     fn play(&self);
     fn pause(&self);
     /// In the device's time.
@@ -494,8 +502,26 @@ impl Caster {
             .as_ref()
             .and_then(|found| server::local_address_toward(found.address.ip()))
             .or_else(server::local_address);
+        let direct = receiver.as_ref().filter(|found| found.paired_video);
+        let (target, picker): (Arc<dyn CastTarget>, Option<Arc<dyn AirPlayTarget>>) = match direct {
+            Some(found) => (
+                apple_tv::AppleTv::open(
+                    found.address.ip(),
+                    &found.device.id,
+                    self.sink(generation),
+                ),
+                None,
+            ),
+            None => {
+                let target = host.open(
+                    anchor,
+                    receiver.as_ref().map(|f| f.device.clone()),
+                    self.sink(generation),
+                );
+                (target.clone(), Some(target))
+            }
+        };
         let device = receiver.map(|found| found.device);
-        let target = host.open(anchor, device.clone(), self.sink(generation));
         {
             let chosen = device.is_some();
             let mut session = Session::new(
@@ -515,9 +541,8 @@ impl Caster {
             } else {
                 CastPhase::Choosing
             };
-            let as_target: Arc<dyn CastTarget> = target.clone();
-            session.target = Some(as_target);
-            session.airplay = Some(target);
+            session.target = Some(target);
+            session.airplay = picker;
             session.host = address;
             self.inner.lock().session = Some(session);
         }
@@ -530,6 +555,23 @@ impl Caster {
                 caster.load_open(generation, false).await;
             }
         });
+        Ok(())
+    }
+
+    pub fn pair(&self, pin: &str) -> AppResult<()> {
+        if pin.len() != 4 || !pin.bytes().all(|c| c.is_ascii_digit()) {
+            return Err(AppError::Invalid(
+                "Enter the four-digit code on the TV.".into(),
+            ));
+        }
+        let inner = self.inner.lock();
+        let target = inner
+            .session
+            .as_ref()
+            .filter(|s| s.phase == CastPhase::Pairing)
+            .and_then(|s| s.target.as_ref())
+            .ok_or_else(|| AppError::Invalid("This pairing request has ended.".into()))?;
+        target.pair(pin);
         Ok(())
     }
 
@@ -633,6 +675,16 @@ impl Caster {
 
     fn heard(&self, generation: u64, event: TargetEvent) {
         match event {
+            TargetEvent::Pairing(waiting) => {
+                self.with_session(generation, |session| {
+                    session.phase = if waiting {
+                        CastPhase::Pairing
+                    } else {
+                        CastPhase::Connecting
+                    }
+                });
+                self.changed();
+            }
             TargetEvent::Active(name) => {
                 let was_choosing = self
                     .with_session(generation, |session| {
@@ -650,7 +702,12 @@ impl Caster {
                     // over from where the Mac has got to while it was open.
                     self.hand_over(generation);
                     let position = self.player.snapshot().position;
-                    self.seek(position);
+                    if !self
+                        .target()
+                        .is_some_and(|target| target.seeks_with_new_stream())
+                    {
+                        self.seek(position);
+                    }
                     if let Some(target) = self.target() {
                         target.play();
                     }
@@ -751,6 +808,7 @@ impl Caster {
                 (Some(loaded), Some(target)) => match &loaded.seeking {
                     Seeking::Free => Some((generation, Some((target.clone(), seconds)))),
                     Seeking::Restart => Some((generation, None)),
+                    Seeking::Hls(_) if target.seeks_with_new_stream() => Some((generation, None)),
                     Seeking::Hls(dir) => {
                         let (written, _) = server::hls_progress(dir);
                         let at = seconds - loaded.offset;
@@ -990,8 +1048,13 @@ impl Caster {
 
         let mut published = Published::default();
         let mut hls = None;
+        let paired_video = self
+            .with_session(generation, |s| {
+                s.target.as_ref().is_some_and(|t| t.seeks_with_new_stream())
+            })
+            .unwrap_or(false);
         let (url_path, content_type, start, offset, seeking) = match (plan.delivery, profile) {
-            (Delivery::Direct, _) if local_file => {
+            (Delivery::Direct, _) if local_file && !paired_video => {
                 published.file = Some(PathBuf::from(&source));
                 (
                     "file".to_owned(),
@@ -1001,7 +1064,7 @@ impl Caster {
                     Seeking::Free,
                 )
             }
-            (Delivery::Direct, _) => (
+            (Delivery::Direct, _) if !paired_video => (
                 String::new(),
                 "video/mp4".to_owned(),
                 at,

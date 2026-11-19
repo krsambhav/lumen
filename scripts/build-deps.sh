@@ -517,3 +517,5 @@ for arch in $ARCHS; do
 done
 merge
 verify
+
+"$(dirname "$0")/airplay/build.sh"

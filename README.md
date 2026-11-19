@@ -29,7 +29,7 @@ Versions before 0.2.7 cannot update themselves: install 0.2.7 or later from the 
 - Xcode command line tools
 - Rust (stable) with both Mac targets: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
 - Node 22 or later and pnpm 10
-- For the native libraries: `brew install pkgconf meson ninja nasm cmake` (cmake builds whisper.cpp, the speech recogniser behind subtitle sync)
+- For the native libraries: `brew install pkgconf meson ninja nasm cmake uv` (cmake builds whisper.cpp, the speech recogniser behind subtitle sync)
 
 ## First build
 

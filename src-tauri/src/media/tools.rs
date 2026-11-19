@@ -11,6 +11,7 @@ use std::process::Command;
 pub enum Tool {
     Ffmpeg,
     Ffprobe,
+    AirPlay,
 }
 
 impl Tool {
@@ -18,6 +19,7 @@ impl Tool {
         match self {
             Self::Ffmpeg => "ffmpeg",
             Self::Ffprobe => "ffprobe",
+            Self::AirPlay => "lumen-airplay",
         }
     }
 }
